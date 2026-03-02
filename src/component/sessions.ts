@@ -38,6 +38,12 @@ interface UpsertSessionArgs {
   ownerId: string;
 }
 
+interface RefreshManyFailure {
+  externalId?: string;
+  message: string;
+  operation: string;
+}
+
 interface RawSessionRecord {
   _id: string;
   _creationTime?: number;
@@ -203,6 +209,58 @@ const normalizeSessionRecord = (session: RawSessionRecord): UpsertSessionArgs =>
 const normalizeListLimit = (limit: number | undefined): number => {
   const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_LIST_LIMIT;
   return Math.max(1, Math.min(parsedLimit, MAX_LIST_LIMIT));
+};
+
+const normalizeListResponse = (
+  operation: string,
+  response: unknown,
+): { items: JsonObject[]; hasMore: boolean; continuation?: string } => {
+  if (!response) {
+    throw normalizeError(`Invalid response from Steel sessions.list`, operation);
+  }
+
+  const envelope = response as JsonObject;
+  if (Array.isArray(response)) {
+    return {
+      items: response,
+      hasMore: false,
+    };
+  }
+
+  let items: unknown;
+  if (Array.isArray(envelope.items)) {
+    items = envelope.items;
+  } else if (Array.isArray(envelope.sessions)) {
+    items = envelope.sessions;
+  } else if (Array.isArray(envelope.results)) {
+    items = envelope.results;
+  } else if (Array.isArray(envelope.data)) {
+    items = envelope.data;
+  } else {
+    throw normalizeError(`Invalid response from Steel sessions.list`, operation);
+  }
+
+  const continuation = pickFirstString(envelope, [
+    "continueCursor",
+    "nextCursor",
+    "cursor",
+    "pageCursor",
+  ]);
+
+  let hasMore: boolean;
+  if (typeof envelope.hasMore === "boolean") {
+    hasMore = envelope.hasMore;
+  } else if (typeof envelope.isDone === "boolean") {
+    hasMore = !envelope.isDone;
+  } else {
+    hasMore = continuation !== undefined;
+  }
+
+  return {
+    items: items as JsonObject[],
+    hasMore,
+    continuation,
+  };
 };
 
 const upsertSession = internalMutation({
@@ -384,6 +442,98 @@ export const sessions = {
       return normalizeWithError("sessions.getByExternalId", () =>
         normalizeSessionRecord(session),
       );
+    },
+  }),
+  refreshMany: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.optional(v.string()),
+      status: v.optional(v.union(v.literal("live"), v.literal("released"), v.literal("failed"))),
+      cursor: v.optional(v.string()),
+      limit: v.optional(v.number()),
+      includeRaw: v.optional(v.boolean()),
+    },
+    handler: async (ctx, args) => {
+      const ownerId = normalizeOwnerId(args.ownerId);
+      if (!ownerId) {
+        throw normalizeError(
+          "Missing ownerId: ownerId is required for sessions.refreshMany",
+          "sessions.refreshMany",
+        );
+      }
+
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "sessions.refreshMany" },
+      );
+      const limit = normalizeListLimit(args.limit);
+      const includeRaw = normalizeIncludeRaw(args.includeRaw);
+
+      const listArgs = {
+        ...(args.status ? { status: args.status } : {}),
+        ...(args.cursor ? { cursor: args.cursor } : {}),
+        limit,
+      };
+      const listResponse = await runWithNormalizedError("sessions.refreshMany", () =>
+        (steel as { sessions?: { list?: (query?: Record<string, unknown>) => Promise<unknown> } }).sessions
+          ?.list?.(listArgs),
+      );
+      if (typeof listResponse !== "object") {
+        throw normalizeError("Invalid response from Steel sessions.list", "sessions.refreshMany");
+      }
+
+      const { items, hasMore, continuation } = normalizeListResponse(
+        "sessions.refreshMany",
+        listResponse,
+      );
+
+      const results: UpsertSessionArgs[] = [];
+      const failures: RefreshManyFailure[] = [];
+
+      for (const raw of items) {
+        const externalId = pickFirstString(raw, [
+          "externalId",
+          "sessionExternalId",
+          "sessionId",
+          "id",
+        ]);
+        if (!externalId) {
+          failures.push({
+            operation: "sessions.refreshMany.item",
+            message: "Item missing externalId",
+          });
+          continue;
+        }
+
+        try {
+          const remoteSession = await runWithNormalizedError("sessions.refreshMany.item", () =>
+            (steel as { sessions?: { get?: (id: string) => Promise<unknown> } }).sessions?.get?.(
+              externalId,
+            ),
+          );
+          if (!remoteSession || typeof remoteSession !== "object") {
+            throw normalizeError("Invalid response from Steel sessions.get", "sessions.refreshMany.item");
+          }
+
+          const normalizedSession = normalizeWithError("sessions.refreshMany.item", () =>
+            normalizeCreatePayload(remoteSession as JsonObject, ownerId, includeRaw),
+          );
+          await runWithNormalizedError("sessions.upsert", () =>
+            ctx.runMutation(internal.sessions.upsert, normalizedSession),
+          );
+          results.push(normalizedSession);
+        } catch (error) {
+          const structured = error instanceof Error ? error.message : "Session refresh failed";
+          failures.push({ externalId, operation: "sessions.refreshMany.item", message: structured });
+        }
+      }
+
+      return {
+        items: results,
+        failures,
+        hasMore,
+        continuation,
+      };
     },
   }),
   list: query({

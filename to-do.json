@@ -212,12 +212,13 @@
         "errors",
         "resilience"
       ],
-      "updated_at": "2026-03-02T09:28:52Z",
+      "updated_at": "2026-03-02T09:28:57Z",
       "details": "Added shared structured error normalization utility and applied it across sessions client and action paths so component errors consistently include provider/message/status/code/retryable/operation. Added support for preserving upstream status/code and retryability hints.",
       "files": [
         "src/component/normalize.ts",
+        "src/component/sessions.ts",
         "src/component/steel.ts",
-        "src/component/sessions.ts"
+        "to-do.json"
       ]
     },
     {
@@ -325,7 +326,7 @@
       "id": "T013",
       "title": "Implement sessions.refreshMany for bulk reconciliation",
       "priority": 2,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T012"
       ],
@@ -338,6 +339,12 @@
         "sessions",
         "sync",
         "bulk"
+      ],
+      "updated_at": "2026-03-02T09:29:26Z",
+      "details": "Implemented sessions.refreshMany as a bulk reconciliation action with optional status/cursor/limit filtering, per-item partial success handling, and continuation passthrough from Steel pagination responses",
+      "files": [
+        "src/component/sessions.ts",
+        "to-do.json"
       ]
     },
     {
