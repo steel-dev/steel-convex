@@ -187,11 +187,11 @@
         "runtime",
         "client"
       ],
-      "updated_at": "2026-03-02T09:25:34Z",
+      "updated_at": "2026-03-02T09:25:39Z",
       "details": "Implemented steel client factory with strict key validation and wrapper-side API key resolution/injection. Client actions require an API key in args; wrapper resolves from constructor option first, then process env, with deterministic injection helpers.",
       "files": [
-        "src/component/steel.ts",
         "src/client/index.ts",
+        "src/component/steel.ts",
         "to-do.json"
       ]
     },
@@ -217,7 +217,7 @@
       "id": "T009",
       "title": "Implement sessions.create action with write-through upsert",
       "priority": 1,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T007",
         "T005",
@@ -231,6 +231,12 @@
       "tags": [
         "sessions",
         "mvp"
+      ],
+      "updated_at": "2026-03-02T09:26:50Z",
+      "details": "Implemented sessions.create action as a write-through action with validation, remote call, response normalization, and internal upsert by externalId. ownerId is required and includeRaw controls raw persistence.",
+      "files": [
+        "src/component/sessions.ts",
+        "to-do.json"
       ]
     },
     {
