@@ -1,14 +1,31 @@
 # Steel Convex Component
 
-Sessions-focused Convex Component for Steel (`v0.1` scope).
+Production-ready Convex component wrapper for Steel.
 
 ## Scope
 
-- Implemented: sessions lifecycle and cache
+Implemented modules:
+
+- Sessions lifecycle + cache
   - `create`, `refresh`, `refreshMany`, `release`, `releaseAll`
   - `get`, `getByExternalId`, `list`
-- Required for all public calls: `ownerId`
-- Out of scope in `v0.1`: files, captchas, profiles, credentials, extensions, top-level utilities
+  - `computer`, `context`, `events`, `liveDetails`
+- Session files
+  - `list`, `upload`, `delete`, `deleteAll`
+- Captchas
+  - `status`, `solve`, `solveImage`
+- Profiles
+  - `list`, `get`, `create`, `update`
+- Credentials
+  - `create`, `update`, `list`, `delete`
+- Extensions
+  - `list`, `upload`, `update`, `delete`, `deleteAll`, `download`
+- Global files
+  - `list`, `upload`, `delete`, `download`
+- Top-level utilities
+  - `steel.screenshot`, `steel.scrape`, `steel.pdf`
+
+All public actions require `ownerId`.
 
 ## Install
 
@@ -52,11 +69,17 @@ export const createSession = action({
 
 ## Data Model
 
-Component table:
+Component tables:
 
 - `sessions`
-  - indexed by `externalId`, `status`, `createdAt`, `ownerId`
-  - `ownerId` is required
+- `sessionFileMetadata`
+- `captchaStates`
+- `profiles`
+- `credentials`
+- `extensions`
+- `globalFiles`
+
+All metadata tables are owner-scoped via `ownerId`.
 
 ## Development
 

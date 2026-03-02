@@ -9,10 +9,10 @@ type JsonObject = Record<string, unknown>;
 
 type SteelProfilesClient = {
   profiles?: {
-    list?: (args?: Record<string, unknown>) => Promise<unknown>;
-    get?: (id: string) => Promise<unknown> | Promise<Record<string, unknown>>;
-    createFromUrl?: (args: Record<string, unknown>) => Promise<unknown>;
-    updateFromUrl?: (args: Record<string, unknown>) => Promise<unknown>;
+    list?: () => Promise<unknown>;
+    get?: (id: string) => Promise<unknown>;
+    create?: (body: Record<string, unknown>) => Promise<unknown>;
+    update?: (id: string, body: Record<string, unknown>) => Promise<unknown>;
   };
 };
 
@@ -25,9 +25,6 @@ interface ProfileMetadata {
   description?: string;
   raw?: unknown;
 }
-
-const DEFAULT_LIST_LIMIT = 50;
-const MAX_LIST_LIMIT = 100;
 
 const requireOwnerId = (ownerId: string | undefined, operation: string): string => {
   const normalized = normalizeOwnerId(ownerId);
@@ -63,16 +60,8 @@ const pickFirstString = (value: JsonObject, keys: string[]): string | undefined 
   return undefined;
 };
 
-const normalizeListLimit = (limit: number | undefined): number => {
-  const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_LIST_LIMIT;
-  return Math.max(1, Math.min(parsedLimit, MAX_LIST_LIMIT));
-};
-
 const normalizeProfileId = (payload: JsonObject): string => {
-  return (
-    pickFirstString(payload, ["externalId", "profileId", "profile_id", "id", "_id"]) ??
-    ""
-  );
+  return pickFirstString(payload, ["externalId", "profileId", "profile_id", "id", "_id"]) ?? "";
 };
 
 const normalizeUserDataDir = (payload: JsonObject): string | undefined => {
@@ -86,7 +75,7 @@ const normalizeUserDataDir = (payload: JsonObject): string | undefined => {
     return pickFirstString(directoryPayload as JsonObject, ["url", "path", "value"]);
   }
 
-  return pickFirstString(payload, ["userDataDirUrl", "user_data_dir_url", "userDataDirUrl"]);
+  return pickFirstString(payload, ["userDataDirUrl", "user_data_dir_url", "storageStateUrl"]);
 };
 
 const normalizeProfileMetadata = (
@@ -142,12 +131,12 @@ const normalizeListResponse = (
   const continuation = pickFirstString(envelope, [
     "continueCursor",
     "nextCursor",
+    "next_cursor",
     "cursor",
     "pageCursor",
   ]);
 
-  const hasMore =
-    typeof envelope.hasMore === "boolean" ? envelope.hasMore : continuation !== undefined;
+  const hasMore = typeof envelope.hasMore === "boolean" ? envelope.hasMore : continuation !== undefined;
 
   return {
     items: items as JsonObject[],
@@ -177,23 +166,11 @@ const normalizeProfileArgs = (
     return {};
   }
 
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
+  if (typeof args !== "object" || Array.isArray(args)) {
     throw normalizeError(`Invalid profile args for ${operation}`, operation);
   }
 
   return { ...args };
-};
-
-const buildUrlProfilePayload = (
-  userDataDirUrl: string,
-  profileArgs?: Record<string, unknown>,
-): Record<string, unknown> => {
-  return {
-    ...normalizeProfileArgs(profileArgs, "profiles.payload"),
-    userDataDir: userDataDirUrl,
-    userDataDirUrl: userDataDirUrl,
-    url: userDataDirUrl,
-  };
 };
 
 const upsertProfileMetadata = internalMutation({
@@ -228,70 +205,138 @@ const upsertProfileMetadata = internalMutation({
   },
 });
 
-const callProfilesGet = async (
+const runProfilesGet = async (
   steel: ReturnType<typeof createSteelClient>,
   externalId: string,
 ): Promise<unknown> => {
   const client = steel as SteelProfilesClient;
-  const getMethod = client.profiles?.get;
-  if (!getMethod) {
+  const method = client.profiles?.get;
+  if (!method) {
     throw normalizeError("Steel profiles.get is not available", "profiles.get");
   }
 
-  try {
-    return await runWithNormalizedError("profiles.get", () => getMethod(externalId));
-  } catch {
-    // Keep this fallback for potential SDK variations in signature.
-    return runWithNormalizedError("profiles.get", () =>
-      getMethod({ id: externalId } as unknown as string),
-    );
-  }
+  return runWithNormalizedError("profiles.get", () => method(externalId));
 };
 
-const callProfilesList = async (
+const runProfilesList = async (
   steel: ReturnType<typeof createSteelClient>,
-  cursor: string | undefined,
-  limit: number | undefined,
 ): Promise<unknown> => {
   const client = steel as SteelProfilesClient;
-  const listMethod = client.profiles?.list;
-  if (!listMethod) {
+  const method = client.profiles?.list;
+  if (!method) {
     throw normalizeError("Steel profiles.list is not available", "profiles.list");
   }
 
-  return runWithNormalizedError("profiles.list", () =>
-    listMethod({
-      ...(cursor ? { cursor } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-    }),
-  );
+  return runWithNormalizedError("profiles.list", () => method());
 };
 
-const callProfilesCreateFromUrl = async (
+const runProfilesCreate = async (
   steel: ReturnType<typeof createSteelClient>,
   payload: Record<string, unknown>,
 ): Promise<unknown> => {
   const client = steel as SteelProfilesClient;
-  const createMethod = client.profiles?.createFromUrl;
-  if (!createMethod) {
-    throw normalizeError("Steel profiles.createFromUrl is not available", "profiles.createFromUrl");
+  const method = client.profiles?.create;
+  if (!method) {
+    throw normalizeError("Steel profiles.create is not available", "profiles.create");
   }
 
-  return runWithNormalizedError("profiles.createFromUrl", () => createMethod(payload));
+  return runWithNormalizedError("profiles.create", () => method(payload));
 };
 
-const callProfilesUpdateFromUrl = async (
+const runProfilesUpdate = async (
   steel: ReturnType<typeof createSteelClient>,
+  externalId: string,
   payload: Record<string, unknown>,
 ): Promise<unknown> => {
   const client = steel as SteelProfilesClient;
-  const updateMethod = client.profiles?.updateFromUrl;
-  if (!updateMethod) {
-    throw normalizeError("Steel profiles.updateFromUrl is not available", "profiles.updateFromUrl");
+  const method = client.profiles?.update;
+  if (!method) {
+    throw normalizeError("Steel profiles.update is not available", "profiles.update");
   }
 
-  return runWithNormalizedError("profiles.updateFromUrl", () => updateMethod(payload));
+  return runWithNormalizedError("profiles.update", () => method(externalId, payload));
 };
+
+const createAction = action({
+  args: {
+    apiKey: v.string(),
+    ownerId: v.optional(v.string()),
+    profileArgs: v.optional(v.record(v.string(), v.any())),
+    userDataDirUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const ownerId = requireOwnerId(args.ownerId, "profiles.create");
+    const steel = createSteelClient(
+      { apiKey: args.apiKey },
+      { operation: "profiles.create" },
+    );
+
+    const payload = normalizeProfileArgs(args.profileArgs, "profiles.create");
+    if (args.userDataDirUrl !== undefined) {
+      const url = normalizeUrlInput(args.userDataDirUrl, "profiles.create");
+      Object.assign(payload, {
+        userDataDir: url,
+        userDataDirUrl: url,
+      });
+    }
+
+    const raw = await runProfilesCreate(steel, payload);
+    if (!raw || typeof raw !== "object") {
+      throw normalizeError(
+        "Invalid response from Steel profiles.create",
+        "profiles.create",
+      );
+    }
+
+    const metadata = normalizeProfileMetadata(raw as JsonObject, ownerId, Date.now());
+    await runWithNormalizedError("profiles.upsert", () =>
+      ctx.runMutation(internal.profiles.upsert, metadata),
+    );
+
+    return metadata;
+  },
+});
+
+const updateAction = action({
+  args: {
+    apiKey: v.string(),
+    ownerId: v.optional(v.string()),
+    externalId: v.string(),
+    profileArgs: v.optional(v.record(v.string(), v.any())),
+    userDataDirUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const ownerId = requireOwnerId(args.ownerId, "profiles.update");
+    const steel = createSteelClient(
+      { apiKey: args.apiKey },
+      { operation: "profiles.update" },
+    );
+
+    const payload = normalizeProfileArgs(args.profileArgs, "profiles.update");
+    if (args.userDataDirUrl !== undefined) {
+      const url = normalizeUrlInput(args.userDataDirUrl, "profiles.update");
+      Object.assign(payload, {
+        userDataDir: url,
+        userDataDirUrl: url,
+      });
+    }
+
+    const raw = await runProfilesUpdate(steel, args.externalId, payload);
+    if (!raw || typeof raw !== "object") {
+      throw normalizeError(
+        "Invalid response from Steel profiles.update",
+        "profiles.update",
+      );
+    }
+
+    const metadata = normalizeProfileMetadata(raw as JsonObject, ownerId, Date.now());
+    await runWithNormalizedError("profiles.upsert", () =>
+      ctx.runMutation(internal.profiles.upsert, metadata),
+    );
+
+    return metadata;
+  },
+});
 
 export const profiles = {
   list: action({
@@ -307,8 +352,7 @@ export const profiles = {
         { apiKey: args.apiKey },
         { operation: "profiles.list" },
       );
-      const limit = normalizeListLimit(args.limit);
-      const raw = await callProfilesList(steel, args.cursor, limit);
+      const raw = await runProfilesList(steel);
       const normalizedList = normalizeListResponse("profiles.list", raw);
 
       const items = [] as ProfileMetadata[];
@@ -345,7 +389,7 @@ export const profiles = {
         { operation: "profiles.get" },
       );
       const syncedAt = Date.now();
-      const raw = await callProfilesGet(steel, args.externalId);
+      const raw = await runProfilesGet(steel, args.externalId);
 
       if (!raw || typeof raw !== "object") {
         throw normalizeError("Invalid response from Steel profiles.get", "profiles.get");
@@ -359,90 +403,18 @@ export const profiles = {
       return metadata;
     },
   }),
-  createFromUrl: action({
-    args: {
-      apiKey: v.string(),
-      ownerId: v.optional(v.string()),
-      userDataDirUrl: v.string(),
-      profileArgs: v.optional(v.record(v.string(), v.any())),
-    },
-    handler: async (ctx, args) => {
-      const ownerId = requireOwnerId(args.ownerId, "profiles.createFromUrl");
-      const url = normalizeUrlInput(args.userDataDirUrl, "profiles.createFromUrl");
-      const steel = createSteelClient(
-        { apiKey: args.apiKey },
-        { operation: "profiles.createFromUrl" },
-      );
-
-      const payload = buildUrlProfilePayload(url, args.profileArgs);
-      const raw = await callProfilesCreateFromUrl(steel, payload);
-      if (!raw || typeof raw !== "object") {
-        throw normalizeError(
-          "Invalid response from Steel profiles.createFromUrl",
-          "profiles.createFromUrl",
-        );
-      }
-
-      const metadata = normalizeProfileMetadata(raw as JsonObject, ownerId, Date.now());
-      await runWithNormalizedError("profiles.upsert", () =>
-        ctx.runMutation(internal.profiles.upsert, metadata),
-      );
-
-      return metadata;
-    },
-  }),
-  updateFromUrl: action({
-    args: {
-      apiKey: v.string(),
-      ownerId: v.optional(v.string()),
-      externalId: v.string(),
-      userDataDirUrl: v.optional(v.string()),
-      profileArgs: v.optional(v.record(v.string(), v.any())),
-    },
-    handler: async (ctx, args) => {
-      const ownerId = requireOwnerId(args.ownerId, "profiles.updateFromUrl");
-      const steel = createSteelClient(
-        { apiKey: args.apiKey },
-        { operation: "profiles.updateFromUrl" },
-      );
-
-      const payload = {
-        ...normalizeProfileArgs(args.profileArgs, "profiles.updateFromUrl"),
-        id: args.externalId,
-        externalId: args.externalId,
-      };
-
-      if (args.userDataDirUrl !== undefined) {
-        const url = normalizeUrlInput(args.userDataDirUrl, "profiles.updateFromUrl");
-        Object.assign(payload, {
-          ...buildUrlProfilePayload(url),
-          userDataDir: url,
-          userDataDirUrl: url,
-          url: url,
-        });
-      }
-
-      const raw = await callProfilesUpdateFromUrl(steel, payload);
-      if (!raw || typeof raw !== "object") {
-        throw normalizeError(
-          "Invalid response from Steel profiles.updateFromUrl",
-          "profiles.updateFromUrl",
-        );
-      }
-
-      const metadata = normalizeProfileMetadata(raw as JsonObject, ownerId, Date.now());
-      await runWithNormalizedError("profiles.upsert", () =>
-        ctx.runMutation(internal.profiles.upsert, metadata),
-      );
-
-      return metadata;
-    },
-  }),
+  create: createAction,
+  update: updateAction,
+  // Backwards-compatible aliases.
+  createFromUrl: createAction,
+  updateFromUrl: updateAction,
   upsert: upsertProfileMetadata,
 };
 
 export const list = profiles.list;
 export const get = profiles.get;
+export const create = profiles.create;
+export const update = profiles.update;
 export const createFromUrl = profiles.createFromUrl;
 export const updateFromUrl = profiles.updateFromUrl;
 export const upsert = profiles.upsert;

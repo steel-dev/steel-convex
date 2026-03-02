@@ -2,6 +2,13 @@ import { __setTestSteelClientFactory } from "./component/steel";
 import { schema as componentSchema } from "./component/schema";
 import * as convexConfig from "./component/convex.config";
 import * as sessions from "./component/sessions";
+import * as sessionFiles from "./component/sessionFiles";
+import * as captchas from "./component/captchas";
+import * as profiles from "./component/profiles";
+import * as credentials from "./component/credentials";
+import * as extensions from "./component/extensions";
+import * as files from "./component/files";
+import * as topLevel from "./component/topLevel";
 
 type SessionStatus = "live" | "released" | "failed";
 
@@ -36,30 +43,61 @@ interface MockSteelClientCalls {
 interface MockSteelClient {
   sessions: {
     create: (args: Record<string, unknown>) => Promise<SteelSessionRecord>;
+    retrieve: (externalId: string) => Promise<SteelSessionRecord>;
     get: (externalId: string) => Promise<SteelSessionRecord>;
-    list: (query: Record<string, unknown>) => Promise<{ items: unknown[]; hasMore: boolean; continuation?: string }>;
+    list: (
+      query: Record<string, unknown>,
+    ) => Promise<{ items: unknown[]; hasMore: boolean; continuation?: string }>;
     release: (externalId: string) => Promise<SteelSessionRecord>;
-    computer: (commandArgs: Record<string, unknown>) => Promise<unknown>;
-    context: (commandArgs: Record<string, unknown>) => Promise<unknown>;
-    liveDetails: (commandArgs: Record<string, unknown>) => Promise<Record<string, unknown>>;
-    events: (commandArgs: Record<string, unknown>) => Promise<unknown>;
-  };
-  sessionFiles?: {
-    list: (query: Record<string, unknown>) => Promise<{ items: unknown[]; hasMore: boolean; continuation?: string }>;
-    uploadFromUrl: (args: Record<string, unknown>) => Promise<unknown>;
-    delete: (args: Record<string, unknown>) => Promise<unknown>;
-    deleteAll: (args: Record<string, unknown>) => Promise<unknown>;
-  };
-  captcha?: {
-    status: (args: Record<string, unknown>) => Promise<unknown>;
-    solve: (args: Record<string, unknown>) => Promise<unknown>;
-    solveImage: (args: Record<string, unknown>) => Promise<unknown>;
+    computer: (externalId: string, commandArgs: Record<string, unknown>) => Promise<unknown>;
+    context: (externalId: string) => Promise<unknown>;
+    liveDetails: (externalId: string) => Promise<Record<string, unknown>>;
+    events: (externalId: string) => Promise<unknown>;
+    files: {
+      list: (sessionId: string) => Promise<{ data: unknown[] }>;
+      upload: (sessionId: string, args: Record<string, unknown>) => Promise<unknown>;
+      delete: (sessionId: string, path: string) => Promise<unknown>;
+      deleteAll: (sessionId: string) => Promise<unknown>;
+    };
+    captchas: {
+      status: (sessionId: string) => Promise<unknown>;
+      solve: (sessionId: string, args?: Record<string, unknown>) => Promise<unknown>;
+      solveImage: (sessionId: string, args: Record<string, unknown>) => Promise<unknown>;
+    };
   };
   profiles?: {
-    list: (query: Record<string, unknown>) => Promise<unknown>;
+    list: () => Promise<unknown>;
     get: (externalId: string) => Promise<unknown>;
-    createFromUrl: (payload: Record<string, unknown>) => Promise<unknown>;
-    updateFromUrl: (payload: Record<string, unknown>) => Promise<unknown>;
+    create: (payload: Record<string, unknown>) => Promise<unknown>;
+    update: (externalId: string, payload: Record<string, unknown>) => Promise<unknown>;
+  };
+  credentials?: {
+    create: (payload: Record<string, unknown>) => Promise<unknown>;
+    update: (payload: Record<string, unknown>) => Promise<unknown>;
+    list: (query: Record<string, unknown>) => Promise<unknown>;
+    delete: (payload: Record<string, unknown>) => Promise<unknown>;
+  };
+  extensions?: {
+    list: () => Promise<unknown>;
+    upload: (payload: Record<string, unknown>) => Promise<unknown>;
+    update: (externalId: string, payload: Record<string, unknown>) => Promise<unknown>;
+    delete: (externalId: string) => Promise<unknown>;
+    deleteAll: () => Promise<unknown>;
+    download: (externalId: string) => Promise<unknown>;
+  };
+  files?: {
+    list: () => Promise<unknown>;
+    upload: (payload: Record<string, unknown>) => Promise<unknown>;
+    delete: (path: string) => Promise<unknown>;
+    download: (path: string) => Promise<unknown>;
+  };
+  screenshot?: (args: Record<string, unknown>) => Promise<unknown>;
+  scrape?: (args: Record<string, unknown>) => Promise<unknown>;
+  pdf?: (args: Record<string, unknown>) => Promise<unknown>;
+  steel?: {
+    screenshot?: (args: Record<string, unknown>) => Promise<unknown>;
+    scrape?: (args: Record<string, unknown>) => Promise<unknown>;
+    pdf?: (args: Record<string, unknown>) => Promise<unknown>;
   };
   __calls: MockSteelClientCalls;
 }
@@ -243,7 +281,16 @@ export const createMockSteelClient = (
 ): MockSteelClient => {
   const baselineNow = sessionFixtures.now;
   const store = new Map<string, SteelSessionRecord>();
-  const calls: MockSteelClientCalls = { sessions: [], sessionFiles: [], captcha: [], profiles: [] };
+  const calls: MockSteelClientCalls = {
+    sessions: [],
+    sessionFiles: [],
+    captchas: [],
+    profiles: [],
+    credentials: [],
+    extensions: [],
+    files: [],
+    steel: [],
+  };
   let sequence = 0;
 
   const now = () => baselineNow + sequence++ * 1000;
@@ -309,6 +356,10 @@ export const createMockSteelClient = (
       store.set(externalId, fallback);
       return clone(fallback);
     },
+    retrieve: async (externalId: string) => {
+      calls.sessions.push({ method: "retrieve", args: [externalId] });
+      return sessionNamespace.get(externalId);
+    },
     list: async (query: Record<string, unknown>) => {
       calls.sessions.push({ method: "list", args: [query] });
       const status = query.status as SessionStatus | undefined;
@@ -341,17 +392,26 @@ export const createMockSteelClient = (
       store.set(externalId, released);
       return clone(released);
     },
-    computer: async (commandArgs: Record<string, unknown>) => {
-      calls.sessions.push({ method: "computer", args: [commandArgs] });
-      return { action: "computer", payload: clone(commandArgs), ...sessionFixtures.commandPayload.response };
+    computer: async (externalId: string, commandArgs: Record<string, unknown>) => {
+      calls.sessions.push({ method: "computer", args: [externalId, commandArgs] });
+      return {
+        action: "computer",
+        sessionId: externalId,
+        payload: clone(commandArgs),
+        ...sessionFixtures.commandPayload.response,
+      };
     },
-    context: async (commandArgs: Record<string, unknown>) => {
-      calls.sessions.push({ method: "context", args: [commandArgs] });
-      return { action: "context", payload: clone(commandArgs), ...sessionFixtures.commandPayload.response };
+    context: async (externalId: string) => {
+      calls.sessions.push({ method: "context", args: [externalId] });
+      return {
+        action: "context",
+        sessionId: externalId,
+        ...sessionFixtures.commandPayload.response,
+      };
     },
-    liveDetails: async (commandArgs: Record<string, unknown>) => {
-      calls.sessions.push({ method: "liveDetails", args: [commandArgs] });
-      const current = store.values().next().value ?? {
+    liveDetails: async (externalId: string) => {
+      calls.sessions.push({ method: "liveDetails", args: [externalId] });
+      const current = store.get(externalId) ?? store.values().next().value ?? {
         ...buildRecord(sessionFixtures.create),
         ownerId: sessionFixtures.ownerId,
       };
@@ -362,73 +422,198 @@ export const createMockSteelClient = (
         sessionViewerUrl: current.sessionViewerUrl,
       });
     },
-    events: async (commandArgs: Record<string, unknown>) => {
-      calls.sessions.push({ method: "events", args: [commandArgs] });
-      return [{ type: "event", payload: clone(commandArgs) }];
+    events: async (externalId: string) => {
+      calls.sessions.push({ method: "events", args: [externalId] });
+      return [{ type: "event", sessionId: externalId }];
     },
-  };
-
-  return {
-    sessions: sessionNamespace,
-    sessionFiles: {
-      list: async (query) => {
-        calls.sessionFiles.push({ method: "list", args: [query] });
-        return { items: [], hasMore: false };
+    files: {
+      list: async (sessionId: string) => {
+        calls.sessionFiles.push({ method: "list", args: [sessionId] });
+        return { data: [] };
       },
-      uploadFromUrl: async (args) => {
-        calls.sessionFiles.push({ method: "uploadFromUrl", args: [args] });
+      upload: async (sessionId: string, args: Record<string, unknown>) => {
+        calls.sessionFiles.push({ method: "upload", args: [sessionId, args] });
         return {
-          sessionExternalId: args.sessionExternalId,
+          sessionExternalId: sessionId,
           path: String(args.path ?? "uploaded-file"),
           size: 0,
           lastModified: now(),
         };
       },
-      delete: async (args) => {
-        calls.sessionFiles.push({ method: "delete", args: [args] });
+      delete: async (sessionId: string, path: string) => {
+        calls.sessionFiles.push({ method: "delete", args: [sessionId, path] });
         return { ok: true, deleted: true };
       },
-      deleteAll: async (args) => {
-        calls.sessionFiles.push({ method: "deleteAll", args: [args] });
+      deleteAll: async (sessionId: string) => {
+        calls.sessionFiles.push({ method: "deleteAll", args: [sessionId] });
         return { ok: true, deletedCount: 0 };
       },
     },
-    captcha: {
-      status: async (args) => {
-        calls.captcha.push({ method: "status", args: [args] });
-        return {
-          sessionExternalId: String(args.sessionExternalId),
-          pageId: String(args.pageId),
-          url: "https://captcha.example.com",
-          isSolvingCaptcha: false,
-          lastUpdated: now(),
-        };
+    captchas: {
+      status: async (sessionId: string) => {
+        calls.captchas.push({ method: "status", args: [sessionId] });
+        return [
+          {
+            pageId: "page-1",
+            url: "https://captcha.example.com",
+            isSolvingCaptcha: false,
+            lastUpdated: now(),
+          },
+        ];
       },
-      solve: async (args) => {
-        calls.captcha.push({ method: "solve", args: [args] });
+      solve: async (sessionId: string, args?: Record<string, unknown>) => {
+        calls.captchas.push({ method: "solve", args: [sessionId, args] });
         return { solved: true };
       },
-      solveImage: async (args) => {
-        calls.captcha.push({ method: "solveImage", args: [args] });
+      solveImage: async (sessionId: string, args: Record<string, unknown>) => {
+        calls.captchas.push({ method: "solveImage", args: [sessionId, args] });
         return { solved: true };
       },
     },
+  };
+
+  return {
+    sessions: sessionNamespace,
     profiles: {
       list: async () => {
         calls.profiles.push({ method: "list", args: [] });
-        return [];
+        return { profiles: [] };
       },
       get: async (externalId) => {
         calls.profiles.push({ method: "get", args: [externalId] });
-        return { externalId, userDataDir: "https://storage.example.com/profile.json" };
+        return { id: externalId, userDataDir: "https://storage.example.com/profile.json" };
       },
-      createFromUrl: async (payload) => {
-        calls.profiles.push({ method: "createFromUrl", args: [payload] });
-        return { externalId: "profile-new", ...(payload as Record<string, unknown>) };
+      create: async (payload) => {
+        calls.profiles.push({ method: "create", args: [payload] });
+        return { id: "profile-new", ...(payload as Record<string, unknown>) };
       },
-      updateFromUrl: async (payload) => {
-        calls.profiles.push({ method: "updateFromUrl", args: [payload] });
-        return payload;
+      update: async (externalId, payload) => {
+        calls.profiles.push({ method: "update", args: [externalId, payload] });
+        return { id: externalId, ...(payload as Record<string, unknown>) };
+      },
+    },
+    credentials: {
+      create: async (payload) => {
+        calls.credentials.push({ method: "create", args: [payload] });
+        return {
+          label: typeof payload.label === "string" ? payload.label : "credential",
+          origin: typeof payload.origin === "string" ? payload.origin : "https://example.com",
+          namespace: typeof payload.namespace === "string" ? payload.namespace : "default",
+          createdAt: new Date(now()).toISOString(),
+          updatedAt: new Date(now()).toISOString(),
+        };
+      },
+      update: async (payload) => {
+        calls.credentials.push({ method: "update", args: [payload] });
+        return {
+          label: typeof payload.label === "string" ? payload.label : "credential",
+          origin: typeof payload.origin === "string" ? payload.origin : "https://example.com",
+          namespace: typeof payload.namespace === "string" ? payload.namespace : "default",
+          createdAt: new Date(now()).toISOString(),
+          updatedAt: new Date(now()).toISOString(),
+        };
+      },
+      list: async (query) => {
+        calls.credentials.push({ method: "list", args: [query] });
+        return {
+          credentials: [
+            {
+              label: "credential",
+              origin: "https://example.com",
+              namespace: "default",
+              createdAt: new Date(now()).toISOString(),
+              updatedAt: new Date(now()).toISOString(),
+            },
+          ],
+        };
+      },
+      delete: async (payload) => {
+        calls.credentials.push({ method: "delete", args: [payload] });
+        return { success: true };
+      },
+    },
+    extensions: {
+      list: async () => {
+        calls.extensions.push({ method: "list", args: [] });
+        return { count: 0, extensions: [] };
+      },
+      upload: async (payload) => {
+        calls.extensions.push({ method: "upload", args: [payload] });
+        return {
+          id: "ext-new",
+          name: "Mock extension",
+          createdAt: new Date(now()).toISOString(),
+          updatedAt: new Date(now()).toISOString(),
+        };
+      },
+      update: async (externalId, payload) => {
+        calls.extensions.push({ method: "update", args: [externalId, payload] });
+        return {
+          id: externalId,
+          name: "Mock extension",
+          createdAt: new Date(now()).toISOString(),
+          updatedAt: new Date(now()).toISOString(),
+        };
+      },
+      delete: async (externalId) => {
+        calls.extensions.push({ method: "delete", args: [externalId] });
+        return { message: "deleted" };
+      },
+      deleteAll: async () => {
+        calls.extensions.push({ method: "deleteAll", args: [] });
+        return { message: "deleted" };
+      },
+      download: async (externalId) => {
+        calls.extensions.push({ method: "download", args: [externalId] });
+        return "extension-binary";
+      },
+    },
+    files: {
+      list: async () => {
+        calls.files.push({ method: "list", args: [] });
+        return { data: [] };
+      },
+      upload: async (payload) => {
+        calls.files.push({ method: "upload", args: [payload] });
+        return {
+          path: typeof payload.path === "string" ? payload.path : "uploaded-file",
+          size: 0,
+          lastModified: new Date(now()).toISOString(),
+        };
+      },
+      delete: async (path) => {
+        calls.files.push({ method: "delete", args: [path] });
+        return { ok: true };
+      },
+      download: async (path) => {
+        calls.files.push({ method: "download", args: [path] });
+        return new Response("mock-file");
+      },
+    },
+    screenshot: async (args) => {
+      calls.steel.push({ method: "screenshot", args: [args] });
+      return { url: "https://example.com/screenshot.png" };
+    },
+    scrape: async (args) => {
+      calls.steel.push({ method: "scrape", args: [args] });
+      return { content: { html: "<html></html>" }, links: [], metadata: { statusCode: 200 } };
+    },
+    pdf: async (args) => {
+      calls.steel.push({ method: "pdf", args: [args] });
+      return { url: "https://example.com/page.pdf" };
+    },
+    steel: {
+      screenshot: async (args) => {
+        calls.steel.push({ method: "steel.screenshot", args: [args] });
+        return { url: "https://example.com/screenshot.png" };
+      },
+      scrape: async (args) => {
+        calls.steel.push({ method: "steel.scrape", args: [args] });
+        return { content: { html: "<html></html>" }, links: [], metadata: { statusCode: 200 } };
+      },
+      pdf: async (args) => {
+        calls.steel.push({ method: "steel.pdf", args: [args] });
+        return { url: "https://example.com/page.pdf" };
       },
     },
     __calls: calls,
@@ -455,6 +640,13 @@ export const componentModules = {
   "./convex.config.ts": convexConfig,
   "./schema.ts": { schema: componentSchema },
   "./sessions.ts": sessions,
+  "./sessionFiles.ts": sessionFiles,
+  "./captchas.ts": captchas,
+  "./profiles.ts": profiles,
+  "./credentials.ts": credentials,
+  "./extensions.ts": extensions,
+  "./files.ts": files,
+  "./topLevel.ts": topLevel,
 };
 
 export const register = (

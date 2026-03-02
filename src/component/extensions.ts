@@ -9,11 +9,12 @@ type JsonObject = Record<string, unknown>;
 
 type SteelExtensionsClient = {
   extensions?: {
-    list?: (query?: Record<string, unknown>) => Promise<unknown>;
-    uploadFromUrl?: (payload: Record<string, unknown>) => Promise<unknown>;
-    updateFromUrl?: (payload: Record<string, unknown>) => Promise<unknown>;
-    delete?: (id: string | Record<string, unknown>) => Promise<unknown>;
+    list?: () => Promise<unknown>;
+    upload?: (payload?: Record<string, unknown>) => Promise<unknown>;
+    update?: (id: string, payload?: Record<string, unknown>) => Promise<unknown>;
+    delete?: (id: string) => Promise<unknown>;
     deleteAll?: () => Promise<unknown>;
+    download?: (id: string) => Promise<unknown>;
   };
 };
 
@@ -28,9 +29,6 @@ interface ExtensionMetadata {
   checksum?: string;
   enabled?: boolean;
 }
-
-const DEFAULT_LIST_LIMIT = 50;
-const MAX_LIST_LIMIT = 100;
 
 const requireOwnerId = (ownerId: string | undefined, operation: string): string => {
   const normalized = normalizeOwnerId(ownerId);
@@ -52,11 +50,6 @@ const runWithNormalizedError = async <T>(
   }
 };
 
-const normalizeListLimit = (limit: number | undefined): number => {
-  const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_LIST_LIMIT;
-  return Math.max(1, Math.min(parsedLimit, MAX_LIST_LIMIT));
-};
-
 const pickFirstString = (value: JsonObject, keys: string[]): string | undefined => {
   for (const key of keys) {
     const candidate = value[key];
@@ -75,17 +68,6 @@ const pickFirstBoolean = (value: JsonObject, keys: string[]): boolean | undefine
   for (const key of keys) {
     const candidate = value[key];
     if (typeof candidate === "boolean") {
-      return candidate;
-    }
-  }
-
-  return undefined;
-};
-
-const pickFirstNumber = (value: JsonObject, keys: string[]): number | undefined => {
-  for (const key of keys) {
-    const candidate = value[key];
-    if (typeof candidate === "number" && Number.isFinite(candidate)) {
       return candidate;
     }
   }
@@ -123,11 +105,36 @@ const normalizeExtensionArgs = (
     return {};
   }
 
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
+  if (typeof args !== "object" || Array.isArray(args)) {
     throw normalizeError(`Invalid extension args for ${operation}`, operation);
   }
 
   return { ...args };
+};
+
+const buildExtensionPayload = (
+  args: {
+    extensionArgs?: Record<string, unknown>;
+    url?: string;
+    file?: string;
+  },
+  operation: string,
+): Record<string, unknown> => {
+  const payload = normalizeExtensionArgs(args.extensionArgs, operation);
+
+  if (args.url !== undefined) {
+    payload.url = normalizeUrlInput(args.url, operation);
+  }
+
+  if (args.file !== undefined) {
+    const file = args.file.trim();
+    if (!file.length) {
+      throw normalizeError(`file must be a non-empty string for ${operation}`, operation);
+    }
+    payload.file = file;
+  }
+
+  return payload;
 };
 
 const normalizeExtensionMetadata = (
@@ -190,19 +197,11 @@ const normalizeListResponse = (
     throw normalizeError(`Invalid response from Steel extensions.list`, operation);
   }
 
-  const continuation = (() => {
-    const candidate = [
-      "continueCursor",
-      "nextCursor",
-      "cursor",
-      "pageCursor",
-    ].find((key) => typeof (envelope as JsonObject)[key] === "string");
-    return candidate ? String((envelope as JsonObject)[candidate]) : undefined;
-  })();
+  const continuation = ["continueCursor", "nextCursor", "next_cursor", "cursor", "pageCursor"]
+    .map((key) => (typeof envelope[key] === "string" ? String(envelope[key]) : undefined))
+    .find((value) => value !== undefined);
 
-  const hasMore = typeof envelope.hasMore === "boolean"
-    ? envelope.hasMore
-    : continuation !== undefined;
+  const hasMore = typeof envelope.hasMore === "boolean" ? envelope.hasMore : continuation !== undefined;
 
   return {
     items: items as JsonObject[],
@@ -213,8 +212,6 @@ const normalizeListResponse = (
 
 const runExtensionsList = async (
   steel: ReturnType<typeof createSteelClient>,
-  cursor: string | undefined,
-  limit: number | undefined,
 ) => {
   const client = steel as SteelExtensionsClient;
   const listMethod = client.extensions?.list;
@@ -222,41 +219,37 @@ const runExtensionsList = async (
     throw normalizeError("Steel extensions.list is not available", "extensions.list");
   }
 
-  return runWithNormalizedError("extensions.list", () =>
-    listMethod({
-      ...(cursor ? { cursor } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-    }),
-  );
+  return runWithNormalizedError("extensions.list", () => listMethod());
 };
 
-const callExtensionsUpload = async (
+const runExtensionsUpload = async (
   steel: ReturnType<typeof createSteelClient>,
   payload: Record<string, unknown>,
 ) => {
   const client = steel as SteelExtensionsClient;
-  const uploadMethod = client.extensions?.uploadFromUrl;
+  const uploadMethod = client.extensions?.upload;
   if (!uploadMethod) {
-    throw normalizeError("Steel extensions.uploadFromUrl is not available", "extensions.uploadFromUrl");
+    throw normalizeError("Steel extensions.upload is not available", "extensions.upload");
   }
 
-  return runWithNormalizedError("extensions.uploadFromUrl", () => uploadMethod(payload));
+  return runWithNormalizedError("extensions.upload", () => uploadMethod(payload));
 };
 
-const callExtensionsUpdate = async (
+const runExtensionsUpdate = async (
   steel: ReturnType<typeof createSteelClient>,
+  externalId: string,
   payload: Record<string, unknown>,
 ) => {
   const client = steel as SteelExtensionsClient;
-  const updateMethod = client.extensions?.updateFromUrl;
+  const updateMethod = client.extensions?.update;
   if (!updateMethod) {
-    throw normalizeError("Steel extensions.updateFromUrl is not available", "extensions.updateFromUrl");
+    throw normalizeError("Steel extensions.update is not available", "extensions.update");
   }
 
-  return runWithNormalizedError("extensions.updateFromUrl", () => updateMethod(payload));
+  return runWithNormalizedError("extensions.update", () => updateMethod(externalId, payload));
 };
 
-const callExtensionsDelete = async (
+const runExtensionsDelete = async (
   steel: ReturnType<typeof createSteelClient>,
   externalId: string,
 ) => {
@@ -266,14 +259,10 @@ const callExtensionsDelete = async (
     throw normalizeError("Steel extensions.delete is not available", "extensions.delete");
   }
 
-  try {
-    return await runWithNormalizedError("extensions.delete", () => deleteMethod(externalId));
-  } catch (error) {
-    return runWithNormalizedError("extensions.delete", () => deleteMethod({ externalId }));
-  }
+  return runWithNormalizedError("extensions.delete", () => deleteMethod(externalId));
 };
 
-const callExtensionsDeleteAll = async (steel: ReturnType<typeof createSteelClient>) => {
+const runExtensionsDeleteAll = async (steel: ReturnType<typeof createSteelClient>) => {
   const client = steel as SteelExtensionsClient;
   const deleteAllMethod = client.extensions?.deleteAll;
   if (!deleteAllMethod) {
@@ -281,6 +270,19 @@ const callExtensionsDeleteAll = async (steel: ReturnType<typeof createSteelClien
   }
 
   return runWithNormalizedError("extensions.deleteAll", () => deleteAllMethod());
+};
+
+const runExtensionsDownload = async (
+  steel: ReturnType<typeof createSteelClient>,
+  externalId: string,
+) => {
+  const client = steel as SteelExtensionsClient;
+  const downloadMethod = client.extensions?.download;
+  if (!downloadMethod) {
+    throw normalizeError("Steel extensions.download is not available", "extensions.download");
+  }
+
+  return runWithNormalizedError("extensions.download", () => downloadMethod(externalId));
 };
 
 const upsertExtensionMetadata = internalMutation({
@@ -361,6 +363,90 @@ const deleteAllExtensionMetadata = internalMutation({
   },
 });
 
+const uploadAction = action({
+  args: {
+    apiKey: v.string(),
+    ownerId: v.optional(v.string()),
+    url: v.optional(v.string()),
+    file: v.optional(v.string()),
+    extensionArgs: v.optional(v.record(v.string(), v.any())),
+  },
+  handler: async (ctx, args) => {
+    const ownerId = requireOwnerId(args.ownerId, "extensions.upload");
+    const steel = createSteelClient(
+      { apiKey: args.apiKey },
+      { operation: "extensions.upload" },
+    );
+
+    const payload = buildExtensionPayload(
+      {
+        extensionArgs: args.extensionArgs,
+        url: args.url,
+        file: args.file,
+      },
+      "extensions.upload",
+    );
+
+    const rawResult = await runExtensionsUpload(steel, payload);
+
+    if (!rawResult || typeof rawResult !== "object") {
+      throw normalizeError(
+        "Invalid response from Steel extensions.upload",
+        "extensions.upload",
+      );
+    }
+
+    const metadata = normalizeExtensionMetadata(rawResult as JsonObject, ownerId, Date.now());
+    await runWithNormalizedError("extensions.upsert", () =>
+      ctx.runMutation(internal.extensions.upsert, metadata),
+    );
+
+    return metadata;
+  },
+});
+
+const updateAction = action({
+  args: {
+    apiKey: v.string(),
+    ownerId: v.optional(v.string()),
+    externalId: v.string(),
+    url: v.optional(v.string()),
+    file: v.optional(v.string()),
+    extensionArgs: v.optional(v.record(v.string(), v.any())),
+  },
+  handler: async (ctx, args) => {
+    const ownerId = requireOwnerId(args.ownerId, "extensions.update");
+    const steel = createSteelClient(
+      { apiKey: args.apiKey },
+      { operation: "extensions.update" },
+    );
+
+    const payload = buildExtensionPayload(
+      {
+        extensionArgs: args.extensionArgs,
+        url: args.url,
+        file: args.file,
+      },
+      "extensions.update",
+    );
+
+    const rawResult = await runExtensionsUpdate(steel, args.externalId, payload);
+    if (!rawResult || typeof rawResult !== "object") {
+      throw normalizeError(
+        "Invalid response from Steel extensions.update",
+        "extensions.update",
+      );
+    }
+
+    const metadata = normalizeExtensionMetadata(rawResult as JsonObject, ownerId, Date.now());
+    await runWithNormalizedError("extensions.upsert", () =>
+      ctx.runMutation(internal.extensions.upsert, metadata),
+    );
+
+    return metadata;
+  },
+});
+
 export const extensions = {
   list: action({
     args: {
@@ -371,14 +457,13 @@ export const extensions = {
     },
     handler: async (ctx, args) => {
       const ownerId = requireOwnerId(args.ownerId, "extensions.list");
-      const limit = normalizeListLimit(args.limit);
       const syncedAt = Date.now();
 
       const steel = createSteelClient(
         { apiKey: args.apiKey },
         { operation: "extensions.list" },
       );
-      const raw = await runExtensionsList(steel, args.cursor, limit);
+      const raw = await runExtensionsList(steel);
       const normalizedList = normalizeListResponse("extensions.list", raw);
 
       const items = [] as ExtensionMetadata[];
@@ -401,98 +486,27 @@ export const extensions = {
       };
     },
   }),
-  uploadFromUrl: action({
-    args: {
-      apiKey: v.string(),
-      ownerId: v.optional(v.string()),
-      url: v.string(),
-      extensionArgs: v.optional(v.record(v.string(), v.any())),
-    },
-    handler: async (ctx, args) => {
-      const ownerId = requireOwnerId(args.ownerId, "extensions.uploadFromUrl");
-      const url = normalizeUrlInput(args.url, "extensions.uploadFromUrl");
-      const steel = createSteelClient(
-        { apiKey: args.apiKey },
-        { operation: "extensions.uploadFromUrl" },
-      );
-
-      const payload = {
-        ...normalizeExtensionArgs(args.extensionArgs, "extensions.uploadFromUrl"),
-        url,
-      };
-      const rawResult = await callExtensionsUpload(steel, payload);
-
-      if (!rawResult || typeof rawResult !== "object") {
-        throw normalizeError(
-          "Invalid response from Steel extensions.uploadFromUrl",
-          "extensions.uploadFromUrl",
-        );
-      }
-
-      const metadata = normalizeExtensionMetadata(rawResult as JsonObject, ownerId, Date.now());
-      await runWithNormalizedError("extensions.upsert", () =>
-        ctx.runMutation(internal.extensions.upsert, metadata),
-      );
-
-      return metadata;
-    },
-  }),
-  updateFromUrl: action({
-    args: {
-      apiKey: v.string(),
-      ownerId: v.optional(v.string()),
-      externalId: v.string(),
-      url: v.optional(v.string()),
-      extensionArgs: v.optional(v.record(v.string(), v.any())),
-    },
-    handler: async (ctx, args) => {
-      const ownerId = requireOwnerId(args.ownerId, "extensions.updateFromUrl");
-      const sdkUrl = args.url === undefined ? undefined : normalizeUrlInput(args.url, "extensions.updateFromUrl");
-      const steel = createSteelClient(
-        { apiKey: args.apiKey },
-        { operation: "extensions.updateFromUrl" },
-      );
-
-      const payload = {
-        ...normalizeExtensionArgs(args.extensionArgs, "extensions.updateFromUrl"),
-        externalId: args.externalId,
-        id: args.externalId,
-        ...(sdkUrl ? { url: sdkUrl } : {}),
-      };
-
-      const rawResult = await callExtensionsUpdate(steel, payload);
-      if (!rawResult || typeof rawResult !== "object") {
-        throw normalizeError(
-          "Invalid response from Steel extensions.updateFromUrl",
-          "extensions.updateFromUrl",
-        );
-      }
-
-      const metadata = normalizeExtensionMetadata(rawResult as JsonObject, ownerId, Date.now());
-      await runWithNormalizedError("extensions.upsert", () =>
-        ctx.runMutation(internal.extensions.upsert, metadata),
-      );
-
-      return metadata;
-    },
-  }),
+  upload: uploadAction,
+  update: updateAction,
+  // Backwards-compatible aliases.
+  uploadFromUrl: uploadAction,
+  updateFromUrl: updateAction,
   delete: action({
     args: {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
       externalId: v.string(),
     },
-    handler: async (_ctx, args) => {
-      requireOwnerId(args.ownerId, "extensions.delete");
-      const ownerId = normalizeOwnerId(args.ownerId) ?? "";
+    handler: async (ctx, args) => {
+      const ownerId = requireOwnerId(args.ownerId, "extensions.delete");
       const steel = createSteelClient(
         { apiKey: args.apiKey },
         { operation: "extensions.delete" },
       );
 
-      const result = await callExtensionsDelete(steel, args.externalId);
+      const result = await runExtensionsDelete(steel, args.externalId);
       await runWithNormalizedError("extensions.delete", () =>
-        _ctx.runMutation(internal.extensions.deleteOne, {
+        ctx.runMutation(internal.extensions.deleteOne, {
           externalId: args.externalId,
           ownerId,
         }),
@@ -506,22 +520,38 @@ export const extensions = {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
     },
-    handler: async (_ctx, args) => {
+    handler: async (ctx, args) => {
       const ownerId = requireOwnerId(args.ownerId, "extensions.deleteAll");
 
       const steel = createSteelClient(
         { apiKey: args.apiKey },
         { operation: "extensions.deleteAll" },
       );
-      const result = await callExtensionsDeleteAll(steel);
+      const result = await runExtensionsDeleteAll(steel);
 
       await runWithNormalizedError("extensions.deleteAll", () =>
-        _ctx.runMutation(internal.extensions.deleteAllForOwner, {
+        ctx.runMutation(internal.extensions.deleteAllForOwner, {
           ownerId,
         }),
       );
 
       return result;
+    },
+  }),
+  download: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.optional(v.string()),
+      externalId: v.string(),
+    },
+    handler: async (_ctx, args) => {
+      requireOwnerId(args.ownerId, "extensions.download");
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "extensions.download" },
+      );
+
+      return runExtensionsDownload(steel, args.externalId);
     },
   }),
   upsert: upsertExtensionMetadata,
@@ -532,10 +562,13 @@ export const extensions = {
 const extensionsDelete = extensions.delete;
 
 export const list = extensions.list;
+export const upload = extensions.upload;
+export const update = extensions.update;
 export const uploadFromUrl = extensions.uploadFromUrl;
 export const updateFromUrl = extensions.updateFromUrl;
 export { extensionsDelete as delete };
 export const deleteAll = extensions.deleteAll;
+export const download = extensions.download;
 export const upsert = extensions.upsert;
 export const deleteOne = extensions.deleteOne;
 export const deleteAllForOwner = extensions.deleteAllForOwner;

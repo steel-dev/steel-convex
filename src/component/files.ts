@@ -9,27 +9,24 @@ type JsonObject = Record<string, unknown>;
 
 type SteelFilesClient = {
   files?: {
-    list?: (query?: Record<string, unknown>) => Promise<unknown>;
-    uploadFromUrl?: (payload: Record<string, unknown>) => Promise<unknown>;
-    delete?: (idOrPayload: string | Record<string, unknown>) => Promise<unknown>;
-    downloadToStorage?: (payload: Record<string, unknown>) => Promise<unknown>;
+    list?: () => Promise<unknown>;
+    upload?: (payload: Record<string, unknown>) => Promise<unknown>;
+    delete?: (path: string) => Promise<unknown>;
+    download?: (path: string) => Promise<unknown>;
   };
 };
 
 interface GlobalFileMetadata {
   externalId: string;
   ownerId: string;
+  path: string;
   name?: string;
-  path?: string;
   size?: number;
   lastModified?: number;
   sourceUrl?: string;
   mimeType?: string;
   lastSyncedAt: number;
 }
-
-const DEFAULT_LIST_LIMIT = 50;
-const MAX_LIST_LIMIT = 100;
 
 const requireOwnerId = (ownerId: string | undefined, operation: string): string => {
   const normalized = normalizeOwnerId(ownerId);
@@ -49,11 +46,6 @@ const runWithNormalizedError = async <T>(
   } catch (error) {
     throw normalizeError(error, operation);
   }
-};
-
-const normalizeListLimit = (limit: number | undefined): number => {
-  const parsed = Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_LIST_LIMIT;
-  return Math.max(1, Math.min(parsed, MAX_LIST_LIMIT));
 };
 
 const pickFirstString = (value: JsonObject, keys: string[]): string | undefined => {
@@ -81,24 +73,59 @@ const pickFirstNumber = (value: JsonObject, keys: string[]): number | undefined 
   return undefined;
 };
 
+const toTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) {
+      return undefined;
+    }
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const pickFirstTimestamp = (value: JsonObject, keys: string[]): number | undefined => {
+  for (const key of keys) {
+    const candidate = toTimestamp(value[key]);
+    if (candidate !== undefined) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
 const normalizeFileMetadata = (
   raw: JsonObject,
   ownerId: string,
   syncedAt: number,
 ): GlobalFileMetadata => {
-  const externalId =
-    pickFirstString(raw, ["externalId", "fileId", "id", "_id", "path"]) ?? "";
-  if (!externalId) {
-    throw normalizeError("Global file payload missing externalId", "files.normalizeMetadata");
+  const path = pickFirstString(raw, ["path", "filePath", "file_path", "id", "externalId"]);
+  if (!path) {
+    throw normalizeError("Global file payload missing path", "files.normalizeMetadata");
   }
 
   return {
-    externalId,
+    externalId: path,
     ownerId,
+    path,
     name: pickFirstString(raw, ["name", "fileName", "filename"]),
-    path: pickFirstString(raw, ["path", "filePath", "file_path"]),
     size: pickFirstNumber(raw, ["size", "byteCount", "bytes"]),
-    lastModified: pickFirstNumber(raw, [
+    lastModified: pickFirstTimestamp(raw, [
       "lastModified",
       "last_modified",
       "modifiedAt",
@@ -106,14 +133,7 @@ const normalizeFileMetadata = (
       "updatedAt",
       "updated_at",
     ]),
-    sourceUrl: pickFirstString(raw, [
-      "url",
-      "sourceUrl",
-      "source_url",
-      "downloadUrl",
-      "download_url",
-      "href",
-    ]),
+    sourceUrl: pickFirstString(raw, ["url", "sourceUrl", "source_url", "href"]),
     mimeType: pickFirstString(raw, ["mimeType", "mime_type", "contentType", "content_type"]),
     lastSyncedAt: syncedAt,
   };
@@ -142,18 +162,17 @@ const normalizeListResponse = (
     items = envelope.files;
   } else if (Array.isArray(envelope.results)) {
     items = envelope.results;
+  } else if (Array.isArray(envelope.data)) {
+    items = envelope.data;
   } else {
     throw normalizeError(`Invalid response from Steel files.list`, operation);
   }
 
-  const continuation = ["continueCursor", "nextCursor", "cursor", "pageCursor"]
+  const continuation = ["continueCursor", "nextCursor", "next_cursor", "cursor", "pageCursor"]
     .map((key) => (typeof envelope[key] === "string" ? String(envelope[key]) : undefined))
     .find((candidate) => candidate !== undefined);
 
-  const hasMore =
-    typeof envelope.hasMore === "boolean"
-      ? envelope.hasMore
-      : continuation !== undefined;
+  const hasMore = typeof envelope.hasMore === "boolean" ? envelope.hasMore : continuation !== undefined;
 
   return {
     items: items as JsonObject[],
@@ -162,89 +181,41 @@ const normalizeListResponse = (
   };
 };
 
-const callFilesList = async (
-  steel: ReturnType<typeof createSteelClient>,
-  cursor: string | undefined,
-  limit: number | undefined,
-) => {
-  const client = steel as SteelFilesClient;
-  const listMethod = client.files?.list;
-  if (!listMethod) {
-    throw normalizeError("Steel files.list is not available", "files.list");
-  }
+const normalizeUploadPayload = (
+  args: {
+    file?: string;
+    url?: string;
+    path?: string;
+    fileArgs?: Record<string, unknown>;
+  },
+  operation: string,
+): Record<string, unknown> => {
+  const file = typeof args.file === "string" && args.file.trim().length > 0 ? args.file.trim() : undefined;
+  const url = typeof args.url === "string" && args.url.trim().length > 0 ? args.url.trim() : undefined;
+  const source = file ?? url;
 
-  return runWithNormalizedError("files.list", () =>
-    listMethod({
-      ...(cursor ? { cursor } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-    }),
-  );
-};
-
-const callFilesUploadFromUrl = async (
-  steel: ReturnType<typeof createSteelClient>,
-  payload: Record<string, unknown>,
-) => {
-  const client = steel as SteelFilesClient;
-  const uploadMethod = client.files?.uploadFromUrl;
-  if (!uploadMethod) {
-    throw normalizeError("Steel files.uploadFromUrl is not available", "files.uploadFromUrl");
-  }
-
-  return runWithNormalizedError("files.uploadFromUrl", () => uploadMethod(payload));
-};
-
-const callFilesDelete = async (
-  steel: ReturnType<typeof createSteelClient>,
-  fileIdentifier: string,
-  payload: Record<string, unknown>,
-) => {
-  const client = steel as SteelFilesClient;
-  const deleteMethod = client.files?.delete;
-  if (!deleteMethod) {
-    throw normalizeError("Steel files.delete is not available", "files.delete");
-  }
-
-  try {
-    return await runWithNormalizedError("files.delete", () => deleteMethod(fileIdentifier));
-  } catch {
-    return runWithNormalizedError("files.delete", () => deleteMethod(payload));
-  }
-};
-
-const callFilesDownloadToStorage = async (
-  steel: ReturnType<typeof createSteelClient>,
-  payload: Record<string, unknown>,
-) => {
-  const client = steel as SteelFilesClient;
-  const downloadMethod = client.files?.downloadToStorage;
-  if (!downloadMethod) {
-    throw normalizeError(
-      "Steel files.downloadToStorage is not available",
-      "files.downloadToStorage",
-    );
-  }
-
-  return runWithNormalizedError("files.downloadToStorage", () => downloadMethod(payload));
-};
-
-const buildDownloadPayload = (
-  externalId: string | undefined,
-  url: string | undefined,
-  fileArgs: Record<string, unknown> | undefined,
-) => {
-  if (!externalId && !url) {
-    throw normalizeError(
-      "files.downloadToStorage requires either externalId or url",
-      "files.downloadToStorage",
-    );
+  if (!source) {
+    throw normalizeError(`${operation} requires either file or url`, operation);
   }
 
   return {
-    ...(externalId ? { externalId } : {}),
-    ...(url ? { url } : {}),
-    ...(fileArgs ?? {}),
+    ...(args.fileArgs ?? {}),
+    file: source,
+    ...(args.path ? { path: args.path } : {}),
   };
+};
+
+const resolveFilePath = (
+  path: string | undefined,
+  externalId: string | undefined,
+  operation: string,
+): string => {
+  const resolved = (path ?? externalId)?.trim();
+  if (!resolved) {
+    throw normalizeError(`${operation} requires path`, operation);
+  }
+
+  return resolved;
 };
 
 const upsertGlobalFileMetadata = internalMutation({
@@ -304,6 +275,167 @@ const deleteGlobalFileMetadata = internalMutation({
   },
 });
 
+const runFilesList = async (steel: ReturnType<typeof createSteelClient>) => {
+  const client = steel as SteelFilesClient;
+  const method = client.files?.list;
+  if (!method) {
+    throw normalizeError("Steel files.list is not available", "files.list");
+  }
+
+  return runWithNormalizedError("files.list", () => method());
+};
+
+const runFilesUpload = async (
+  steel: ReturnType<typeof createSteelClient>,
+  payload: Record<string, unknown>,
+) => {
+  const client = steel as SteelFilesClient;
+  const method = client.files?.upload;
+  if (!method) {
+    throw normalizeError("Steel files.upload is not available", "files.upload");
+  }
+
+  return runWithNormalizedError("files.upload", () => method(payload));
+};
+
+const runFilesDelete = async (
+  steel: ReturnType<typeof createSteelClient>,
+  path: string,
+) => {
+  const client = steel as SteelFilesClient;
+  const method = client.files?.delete;
+  if (!method) {
+    throw normalizeError("Steel files.delete is not available", "files.delete");
+  }
+
+  return runWithNormalizedError("files.delete", () => method(path));
+};
+
+const runFilesDownload = async (
+  steel: ReturnType<typeof createSteelClient>,
+  path: string,
+) => {
+  const client = steel as SteelFilesClient;
+  const method = client.files?.download;
+  if (!method) {
+    throw normalizeError("Steel files.download is not available", "files.download");
+  }
+
+  return runWithNormalizedError("files.download", () => method(path));
+};
+
+const toBase64 = (arrayBuffer: ArrayBuffer): string => {
+  const globalBuffer = globalThis as unknown as { Buffer?: { from: (buffer: ArrayBuffer) => { toString: (encoding: string) => string } } };
+  if (globalBuffer.Buffer) {
+    return globalBuffer.Buffer.from(arrayBuffer).toString("base64");
+  }
+
+  let binary = "";
+  const bytes = new Uint8Array(arrayBuffer);
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  if (typeof btoa === "function") {
+    return btoa(binary);
+  }
+
+  throw normalizeError("No base64 encoder available for files.download", "files.download");
+};
+
+const normalizeDownloadResponse = async (
+  response: unknown,
+): Promise<{ base64: string; contentType?: string; status?: number; ok?: boolean }> => {
+  if (!response || typeof response !== "object") {
+    throw normalizeError("Invalid response from Steel files.download", "files.download");
+  }
+
+  const maybeResponse = response as {
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+    headers?: { get?: (name: string) => string | null };
+    status?: number;
+    ok?: boolean;
+  };
+
+  if (typeof maybeResponse.arrayBuffer !== "function") {
+    throw normalizeError("Steel files.download response is not binary", "files.download");
+  }
+
+  const bytes = await maybeResponse.arrayBuffer();
+  const contentType = maybeResponse.headers?.get?.("content-type") ?? undefined;
+
+  return {
+    base64: toBase64(bytes),
+    ...(typeof contentType === "string" ? { contentType } : {}),
+    ...(typeof maybeResponse.status === "number" ? { status: maybeResponse.status } : {}),
+    ...(typeof maybeResponse.ok === "boolean" ? { ok: maybeResponse.ok } : {}),
+  };
+};
+
+const uploadAction = action({
+  args: {
+    apiKey: v.string(),
+    ownerId: v.optional(v.string()),
+    file: v.optional(v.string()),
+    url: v.optional(v.string()),
+    path: v.optional(v.string()),
+    fileArgs: v.optional(v.record(v.string(), v.any())),
+  },
+  handler: async (ctx, args) => {
+    const ownerId = requireOwnerId(args.ownerId, "files.upload");
+    const syncedAt = Date.now();
+    const steel = createSteelClient(
+      { apiKey: args.apiKey },
+      { operation: "files.upload" },
+    );
+
+    const payload = normalizeUploadPayload(
+      {
+        file: args.file,
+        url: args.url,
+        path: args.path,
+        fileArgs: args.fileArgs,
+      },
+      "files.upload",
+    );
+
+    const rawResult = await runFilesUpload(steel, payload);
+    if (!rawResult || typeof rawResult !== "object") {
+      throw normalizeError(
+        "Invalid response from Steel files.upload",
+        "files.upload",
+      );
+    }
+
+    const metadata = normalizeFileMetadata(rawResult as JsonObject, ownerId, syncedAt);
+    await runWithNormalizedError("files.upsert", () =>
+      ctx.runMutation(internal.files.upsert, metadata),
+    );
+
+    return metadata;
+  },
+});
+
+const downloadAction = action({
+  args: {
+    apiKey: v.string(),
+    ownerId: v.optional(v.string()),
+    path: v.optional(v.string()),
+    externalId: v.optional(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    requireOwnerId(args.ownerId, "files.download");
+    const steel = createSteelClient(
+      { apiKey: args.apiKey },
+      { operation: "files.download" },
+    );
+
+    const path = resolveFilePath(args.path, args.externalId, "files.download");
+    const raw = await runFilesDownload(steel, path);
+    return normalizeDownloadResponse(raw);
+  },
+});
+
 export const files = {
   list: action({
     args: {
@@ -314,9 +446,8 @@ export const files = {
     },
     handler: async (ctx, args) => {
       const ownerId = requireOwnerId(args.ownerId, "files.list");
-      const limit = normalizeListLimit(args.limit);
       const steel = createSteelClient({ apiKey: args.apiKey }, { operation: "files.list" });
-      const raw = await callFilesList(steel, args.cursor, limit);
+      const raw = await runFilesList(steel);
       const normalizedList = normalizeListResponse("files.list", raw);
       const syncedAt = Date.now();
 
@@ -340,60 +471,26 @@ export const files = {
       };
     },
   }),
-  uploadFromUrl: action({
-    args: {
-      apiKey: v.string(),
-      ownerId: v.optional(v.string()),
-      url: v.string(),
-      path: v.optional(v.string()),
-      name: v.optional(v.string()),
-      fileArgs: v.optional(v.record(v.string(), v.any())),
-    },
-    handler: async (ctx, args) => {
-      const ownerId = requireOwnerId(args.ownerId, "files.uploadFromUrl");
-      const syncedAt = Date.now();
-      const steel = createSteelClient(
-        { apiKey: args.apiKey },
-        { operation: "files.uploadFromUrl" },
-      );
-
-      const payload = {
-        url: args.url,
-        ...(args.path ? { path: args.path } : {}),
-        ...(args.name ? { name: args.name } : {}),
-        ...(args.fileArgs ?? {}),
-      };
-
-      const rawResult = await callFilesUploadFromUrl(steel, payload);
-      if (!rawResult || typeof rawResult !== "object") {
-        throw normalizeError(
-          "Invalid response from Steel files.uploadFromUrl",
-          "files.uploadFromUrl",
-        );
-      }
-
-      const metadata = normalizeFileMetadata(rawResult as JsonObject, ownerId, syncedAt);
-      await runWithNormalizedError("files.upsert", () =>
-        ctx.runMutation(internal.files.upsert, metadata),
-      );
-
-      return metadata;
-    },
-  }),
+  upload: uploadAction,
+  // Backwards-compatible alias.
+  uploadFromUrl: uploadAction,
   delete: action({
     args: {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
-      externalId: v.string(),
+      path: v.optional(v.string()),
+      externalId: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
       const ownerId = requireOwnerId(args.ownerId, "files.delete");
+      const path = resolveFilePath(args.path, args.externalId, "files.delete");
+
       const steel = createSteelClient({ apiKey: args.apiKey }, { operation: "files.delete" });
-      const result = await callFilesDelete(steel, args.externalId, { externalId: args.externalId });
+      const result = await runFilesDelete(steel, path);
 
       await runWithNormalizedError("files.delete", () =>
         ctx.runMutation(internal.files.deleteOne, {
-          externalId: args.externalId,
+          externalId: path,
           ownerId,
         }),
       );
@@ -401,43 +498,9 @@ export const files = {
       return result;
     },
   }),
-  downloadToStorage: action({
-    args: {
-      apiKey: v.string(),
-      ownerId: v.optional(v.string()),
-      externalId: v.optional(v.string()),
-      url: v.optional(v.string()),
-      fileArgs: v.optional(v.record(v.string(), v.any())),
-    },
-    handler: async (ctx, args) => {
-      const ownerId = requireOwnerId(args.ownerId, "files.downloadToStorage");
-      const steel = createSteelClient(
-        { apiKey: args.apiKey },
-        { operation: "files.downloadToStorage" },
-      );
-
-      const payload = buildDownloadPayload(
-        args.externalId,
-        typeof args.url === "string" ? args.url : undefined,
-        args.fileArgs,
-      );
-
-      const result = await callFilesDownloadToStorage(steel, payload);
-      if (result && typeof result === "object") {
-        const syncedAt = Date.now();
-        try {
-          const metadata = normalizeFileMetadata(result as JsonObject, ownerId, syncedAt);
-          await runWithNormalizedError("files.upsert", () =>
-            ctx.runMutation(internal.files.upsert, metadata),
-          );
-        } catch {
-          // Best-effort metadata persistence when response includes recognized fields.
-        }
-      }
-
-      return result;
-    },
-  }),
+  download: downloadAction,
+  // Backwards-compatible alias.
+  downloadToStorage: downloadAction,
   upsert: upsertGlobalFileMetadata,
   deleteOne: deleteGlobalFileMetadata,
 };
@@ -445,8 +508,10 @@ export const files = {
 const filesDelete = files.delete;
 
 export const list = files.list;
+export const upload = files.upload;
 export const uploadFromUrl = files.uploadFromUrl;
 export { filesDelete as delete };
+export const download = files.download;
 export const downloadToStorage = files.downloadToStorage;
 export const upsert = files.upsert;
 export const deleteOne = files.deleteOne;

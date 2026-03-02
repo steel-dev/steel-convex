@@ -1,4 +1,11 @@
-export * from "./sessions.js";
+export { sessions } from "./sessions.js";
+export { sessionFiles } from "./sessionFiles.js";
+export { captchas } from "./captchas.js";
+export { profiles } from "./profiles.js";
+export { credentials } from "./credentials.js";
+export { extensions } from "./extensions.js";
+export { files } from "./files.js";
+export { steel } from "./topLevel.js";
 export * from "./schema.js";
 export * from "./steel.js";
 export * from "./normalize.js";

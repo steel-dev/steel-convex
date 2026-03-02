@@ -16,7 +16,7 @@ export type FunctionPath = {
 };
 
 const componentModules = import.meta.glob(
-  "../src/component/{sessions,schema,convex.config,_generated/api,_generated/server,_generated/dataModel}.ts",
+  "../src/component/{sessions,sessionFiles,captchas,profiles,credentials,extensions,files,topLevel,schema,convex.config,_generated/api,_generated/server,_generated/dataModel}.ts",
 );
 const appModules = import.meta.glob("../example/convex/**/*.ts");
 const testModules = { ...appModules, ...componentModules };

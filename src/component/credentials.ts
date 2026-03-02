@@ -10,9 +10,9 @@ type JsonObject = Record<string, unknown>;
 type SteelCredentialsClient = {
   credentials?: {
     create?: (args: Record<string, unknown>) => Promise<unknown>;
-    update?: (args: Record<string, unknown>) => Promise<unknown>;
+    update?: (args?: Record<string, unknown>) => Promise<unknown>;
     list?: (query?: Record<string, unknown>) => Promise<unknown>;
-    delete?: (id: string) => Promise<unknown>;
+    delete?: (args: Record<string, unknown>) => Promise<unknown>;
   };
 };
 
@@ -24,14 +24,14 @@ interface CredentialMetadata {
   username?: string;
   description?: string;
   metadata?: Record<string, unknown>;
+  origin?: string;
+  namespace?: string;
   createdAt?: number;
   updatedAt?: number;
   ownerId: string;
   lastSyncedAt: number;
 }
 
-const DEFAULT_LIST_LIMIT = 50;
-const MAX_LIST_LIMIT = 100;
 const SECRET_KEY_MARKERS = [
   "secret",
   "password",
@@ -43,6 +43,7 @@ const SECRET_KEY_MARKERS = [
   "private_key",
   "client_secret",
   "credential",
+  "value",
 ];
 
 const requireOwnerId = (ownerId: string | undefined, operation: string): string => {
@@ -71,11 +72,6 @@ const runWithNormalizedError = async <T>(
   } catch (error) {
     throw normalizeError(error, operation);
   }
-};
-
-const normalizeListLimit = (limit: number | undefined): number => {
-  const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_LIST_LIMIT;
-  return Math.max(1, Math.min(parsedLimit, MAX_LIST_LIMIT));
 };
 
 const isSecretKey = (key: string): boolean => {
@@ -134,10 +130,35 @@ const pickFirstObject = (
   return undefined;
 };
 
-const pickFirstNumber = (value: JsonObject, keys: string[]): number | undefined => {
+const toTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) {
+      return undefined;
+    }
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const pickFirstTimestamp = (value: JsonObject, keys: string[]): number | undefined => {
   for (const key of keys) {
-    const candidate = value[key];
-    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+    const candidate = toTimestamp(value[key]);
+    if (candidate !== undefined) {
       return candidate;
     }
   }
@@ -145,33 +166,72 @@ const pickFirstNumber = (value: JsonObject, keys: string[]): number | undefined 
   return undefined;
 };
 
+const normalizeCredentialArgs = (args: Record<string, unknown> | undefined, operation: string) => {
+  if (!args) {
+    return {};
+  }
+
+  if (typeof args !== "object" || Array.isArray(args)) {
+    throw normalizeError(`Invalid credential args for ${operation}`, operation);
+  }
+
+  return { ...args };
+};
+
+const normalizeCredentialExternalId = (
+  namespace: string | undefined,
+  origin: string | undefined,
+  label: string | undefined,
+): string => {
+  return `${namespace ?? "default"}::${origin ?? "*"}::${label ?? "*"}`;
+};
+
+const parseCredentialExternalId = (
+  externalId: string,
+): { namespace?: string; origin?: string; label?: string } => {
+  const [namespace, origin, label] = externalId.split("::");
+  return {
+    namespace: namespace && namespace !== "default" ? namespace : undefined,
+    origin: origin && origin !== "*" ? origin : undefined,
+    label: label && label !== "*" ? label : undefined,
+  };
+};
+
 const normalizeCredentialMetadata = (
   payload: JsonObject,
   ownerId: string,
   syncedAt: number,
+  fallback?: {
+    namespace?: string;
+    origin?: string;
+    label?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): CredentialMetadata => {
-  const externalId = pickFirstString(payload, ["externalId", "credentialId", "id", "_id"]);
-  if (!externalId) {
-    throw normalizeError("Credential payload missing externalId", "credentials.normalize");
-  }
+  const namespace = pickFirstString(payload, ["namespace"]) ?? fallback?.namespace;
+  const origin = pickFirstString(payload, ["origin"]) ?? fallback?.origin;
+  const label = pickFirstString(payload, ["label", "name", "credentialName"]) ?? fallback?.label;
 
-  const rawMetadata = pickFirstObject(payload, ["metadata", "meta", "details"]) ??
-    (pickFirstObject(payload, ["extra"]) as Record<string, unknown> | undefined);
-
-  const sanitizedMetadata = rawMetadata && Object.keys(rawMetadata).length > 0
-    ? (sanitizeSecretValues(rawMetadata) as Record<string, unknown>)
+  const rawMetadata = pickFirstObject(payload, ["metadata", "meta", "details", "extra"]);
+  const metadataSource = rawMetadata ?? fallback?.metadata;
+  const sanitizedMetadata = metadataSource && Object.keys(metadataSource).length > 0
+    ? (sanitizeSecretValues(metadataSource) as Record<string, unknown>)
     : undefined;
+
+  const externalId = normalizeCredentialExternalId(namespace, origin, label);
 
   return {
     externalId,
-    name: pickFirstString(payload, ["name", "credentialName"]),
-    service: pickFirstString(payload, ["service", "provider", "site"]),
+    name: label,
+    service: origin,
     type: pickFirstString(payload, ["type", "kind"]),
     username: pickFirstString(payload, ["username", "user", "login"]),
     description: pickFirstString(payload, ["description", "summary"]),
     metadata: sanitizedMetadata,
-    createdAt: pickFirstNumber(payload, ["createdAt", "created_at", "created"]),
-    updatedAt: pickFirstNumber(payload, ["updatedAt", "updated_at", "updated"]),
+    origin,
+    namespace,
+    createdAt: pickFirstTimestamp(payload, ["createdAt", "created_at", "created"]),
+    updatedAt: pickFirstTimestamp(payload, ["updatedAt", "updated_at", "updated"]),
     ownerId,
     lastSyncedAt: syncedAt,
   };
@@ -180,79 +240,36 @@ const normalizeCredentialMetadata = (
 const normalizeListResponse = (
   operation: string,
   response: unknown,
-): { items: JsonObject[]; hasMore: boolean; continuation?: string } => {
+): JsonObject[] => {
   if (!response) {
     throw normalizeError(`Invalid response from Steel credentials.list`, operation);
   }
 
   if (Array.isArray(response)) {
-    return {
-      items: response,
-      hasMore: false,
-    };
+    return response.filter((item): item is JsonObject => typeof item === "object" && item !== null);
   }
 
   const envelope = response as JsonObject;
-  let items: unknown;
+  if (Array.isArray(envelope.credentials)) {
+    return envelope.credentials.filter((item): item is JsonObject => typeof item === "object" && item !== null);
+  }
+
   if (Array.isArray(envelope.items)) {
-    items = envelope.items;
-  } else if (Array.isArray(envelope.credentials)) {
-    items = envelope.credentials;
-  } else if (Array.isArray(envelope.results)) {
-    items = envelope.results;
-  } else if (Array.isArray(envelope.data)) {
-    items = envelope.data;
-  } else {
-    throw normalizeError(`Invalid response from Steel credentials.list`, operation);
+    return envelope.items.filter((item): item is JsonObject => typeof item === "object" && item !== null);
   }
 
-  const continuation = (() => {
-    const candidate = [
-      "continueCursor",
-      "nextCursor",
-      "cursor",
-      "pageCursor",
-    ].find((key) => typeof (envelope as JsonObject)[key] === "string");
-
-    return candidate ? String((envelope as JsonObject)[candidate]) : undefined;
-  })();
-
-  const hasMore = typeof envelope.hasMore === "boolean"
-    ? envelope.hasMore
-    : continuation !== undefined;
-
-  return {
-    items: items as JsonObject[],
-    hasMore,
-    continuation,
-  };
-};
-
-const normalizeCredentialArgs = (args: Record<string, unknown> | undefined, operation: string) => {
-  if (!args) {
-    return {};
+  if (Array.isArray(envelope.results)) {
+    return envelope.results.filter((item): item is JsonObject => typeof item === "object" && item !== null);
   }
 
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    throw normalizeError(`Invalid credential args for ${operation}`, operation);
+  if (Array.isArray(envelope.data)) {
+    return envelope.data.filter((item): item is JsonObject => typeof item === "object" && item !== null);
   }
 
-  return { ...args };
+  throw normalizeError(`Invalid response from Steel credentials.list`, operation);
 };
 
-const buildCredentialUpdatePayload = (
-  externalId: string,
-  credentialArgs: Record<string, unknown> | undefined,
-) => {
-  return {
-    ...normalizeCredentialArgs(credentialArgs, "credentials.update"),
-    id: externalId,
-    credentialId: externalId,
-    externalId,
-  };
-};
-
-const callCredentialsCreate = async (
+const runCredentialsCreate = async (
   steel: ReturnType<typeof createSteelClient>,
   payload: Record<string, unknown>,
 ) => {
@@ -265,7 +282,7 @@ const callCredentialsCreate = async (
   return runWithNormalizedError("credentials.create", () => createMethod(payload));
 };
 
-const callCredentialsUpdate = async (
+const runCredentialsUpdate = async (
   steel: ReturnType<typeof createSteelClient>,
   payload: Record<string, unknown>,
 ) => {
@@ -278,10 +295,9 @@ const callCredentialsUpdate = async (
   return runWithNormalizedError("credentials.update", () => updateMethod(payload));
 };
 
-const callCredentialsList = async (
+const runCredentialsList = async (
   steel: ReturnType<typeof createSteelClient>,
-  cursor: string | undefined,
-  limit: number | undefined,
+  query: Record<string, unknown>,
 ) => {
   const client = steel as SteelCredentialsClient;
   const listMethod = client.credentials?.list;
@@ -289,17 +305,12 @@ const callCredentialsList = async (
     throw normalizeError("Steel credentials.list is not available", "credentials.list");
   }
 
-  return runWithNormalizedError("credentials.list", () =>
-    listMethod({
-      ...(cursor ? { cursor } : {}),
-      ...(limit !== undefined ? { limit } : {}),
-    }),
-  );
+  return runWithNormalizedError("credentials.list", () => listMethod(query));
 };
 
-const callCredentialsDelete = async (
+const runCredentialsDelete = async (
   steel: ReturnType<typeof createSteelClient>,
-  externalId: string,
+  payload: Record<string, unknown>,
 ) => {
   const client = steel as SteelCredentialsClient;
   const deleteMethod = client.credentials?.delete;
@@ -307,7 +318,7 @@ const callCredentialsDelete = async (
     throw normalizeError("Steel credentials.delete is not available", "credentials.delete");
   }
 
-  return runWithNormalizedError("credentials.delete", () => deleteMethod(externalId));
+  return runWithNormalizedError("credentials.delete", () => deleteMethod(payload));
 };
 
 const upsertCredentialMetadata = internalMutation({
@@ -319,6 +330,8 @@ const upsertCredentialMetadata = internalMutation({
     username: v.optional(v.string()),
     description: v.optional(v.string()),
     metadata: v.optional(v.record(v.string(), v.any())),
+    origin: v.optional(v.string()),
+    namespace: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     ownerId: v.string(),
@@ -372,6 +385,37 @@ const deleteCredentialMetadata = internalMutation({
   },
 });
 
+const deleteCredentialMetadataByOriginNamespace = internalMutation({
+  args: {
+    ownerId: v.string(),
+    origin: v.string(),
+    namespace: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const records = await ctx.db
+      .query("credentials")
+      .withIndex("byOwnerId", (q) => q.eq("ownerId", args.ownerId))
+      .collect();
+
+    const targetNamespace = args.namespace ?? "default";
+
+    for (const record of records) {
+      if (record.ownerId && record.ownerId !== args.ownerId) {
+        throw normalizeError(
+          "ownerId mismatch for credential delete",
+          "credentials.delete",
+        );
+      }
+
+      const recordOrigin = record.origin;
+      const recordNamespace = record.namespace ?? "default";
+      if (recordOrigin === args.origin && recordNamespace === targetNamespace) {
+        await ctx.db.delete(record._id);
+      }
+    }
+  },
+});
+
 export const credentials = {
   create: action({
     args: {
@@ -387,13 +431,18 @@ export const credentials = {
       );
 
       const payload = normalizeCredentialArgs(args.credentialArgs, "credentials.create");
-      const raw = await callCredentialsCreate(steel, payload);
+      const raw = await runCredentialsCreate(steel, payload);
       if (!raw || typeof raw !== "object") {
         throw normalizeError("Invalid response from Steel credentials.create", "credentials.create");
       }
 
       const metadata = normalizeWithError("credentials.create", () =>
-        normalizeCredentialMetadata(raw as JsonObject, ownerId, Date.now()),
+        normalizeCredentialMetadata(raw as JsonObject, ownerId, Date.now(), {
+          namespace: typeof payload.namespace === "string" ? payload.namespace : undefined,
+          origin: typeof payload.origin === "string" ? payload.origin : undefined,
+          label: typeof payload.label === "string" ? payload.label : undefined,
+          metadata: pickFirstObject(payload, ["metadata"]),
+        }),
       );
 
       await runWithNormalizedError("credentials.upsert", () =>
@@ -407,7 +456,6 @@ export const credentials = {
     args: {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
-      externalId: v.string(),
       credentialArgs: v.optional(v.record(v.string(), v.any())),
     },
     handler: async (ctx, args) => {
@@ -417,17 +465,19 @@ export const credentials = {
         { operation: "credentials.update" },
       );
 
-      const payload = buildCredentialUpdatePayload(
-        args.externalId,
-        normalizeCredentialArgs(args.credentialArgs, "credentials.update"),
-      );
-      const raw = await callCredentialsUpdate(steel, payload);
+      const payload = normalizeCredentialArgs(args.credentialArgs, "credentials.update");
+      const raw = await runCredentialsUpdate(steel, payload);
       if (!raw || typeof raw !== "object") {
         throw normalizeError("Invalid response from Steel credentials.update", "credentials.update");
       }
 
       const metadata = normalizeWithError("credentials.update", () =>
-        normalizeCredentialMetadata(raw as JsonObject, ownerId, Date.now()),
+        normalizeCredentialMetadata(raw as JsonObject, ownerId, Date.now(), {
+          namespace: typeof payload.namespace === "string" ? payload.namespace : undefined,
+          origin: typeof payload.origin === "string" ? payload.origin : undefined,
+          label: typeof payload.label === "string" ? payload.label : undefined,
+          metadata: pickFirstObject(payload, ["metadata"]),
+        }),
       );
 
       await runWithNormalizedError("credentials.upsert", () =>
@@ -441,40 +491,36 @@ export const credentials = {
     args: {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
+      queryArgs: v.optional(v.record(v.string(), v.any())),
       cursor: v.optional(v.string()),
       limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
       const ownerId = requireOwnerId(args.ownerId, "credentials.list");
-      const limit = normalizeListLimit(args.limit);
       const steel = createSteelClient(
         { apiKey: args.apiKey },
         { operation: "credentials.list" },
       );
 
-      const raw = await callCredentialsList(steel, args.cursor, limit);
-      const normalizedList = normalizeListResponse("credentials.list", raw);
+      const queryArgs = normalizeCredentialArgs(args.queryArgs, "credentials.list");
+      const raw = await runCredentialsList(steel, queryArgs);
+      const items = normalizeListResponse("credentials.list", raw);
       const syncedAt = Date.now();
 
-      const items: CredentialMetadata[] = [];
-      for (const item of normalizedList.items) {
-        if (!item || typeof item !== "object") {
-          continue;
-        }
-
+      const normalizedItems: CredentialMetadata[] = [];
+      for (const item of items) {
         const metadata = normalizeWithError("credentials.list", () =>
           normalizeCredentialMetadata(item, ownerId, syncedAt),
         );
         await runWithNormalizedError("credentials.upsert", () =>
           ctx.runMutation(internal.credentials.upsert, metadata),
         );
-        items.push(metadata);
+        normalizedItems.push(metadata);
       }
 
       return {
-        items,
-        hasMore: normalizedList.hasMore,
-        continuation: normalizedList.continuation,
+        items: normalizedItems,
+        hasMore: false,
       };
     },
   }),
@@ -482,7 +528,9 @@ export const credentials = {
     args: {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
-      externalId: v.string(),
+      origin: v.optional(v.string()),
+      namespace: v.optional(v.string()),
+      externalId: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
       const ownerId = requireOwnerId(args.ownerId, "credentials.delete");
@@ -491,11 +539,25 @@ export const credentials = {
         { operation: "credentials.delete" },
       );
 
-      const result = await callCredentialsDelete(steel, args.externalId);
+      const derived = args.externalId ? parseCredentialExternalId(args.externalId) : {};
+      const origin = (args.origin ?? derived.origin)?.trim();
+      if (!origin) {
+        throw normalizeError("credentials.delete requires origin", "credentials.delete");
+      }
+
+      const namespace = (args.namespace ?? derived.namespace)?.trim() || undefined;
+      const payload = {
+        origin,
+        ...(namespace ? { namespace } : {}),
+      };
+
+      const result = await runCredentialsDelete(steel, payload);
+
       await runWithNormalizedError("credentials.deleteLocal", () =>
-        ctx.runMutation(internal.credentials.remove, {
-          externalId: args.externalId,
+        ctx.runMutation(internal.credentials.removeByOriginNamespace, {
           ownerId,
+          origin,
+          ...(namespace ? { namespace } : {}),
         }),
       );
 
@@ -504,6 +566,7 @@ export const credentials = {
   }),
   upsert: upsertCredentialMetadata,
   remove: deleteCredentialMetadata,
+  removeByOriginNamespace: deleteCredentialMetadataByOriginNamespace,
 };
 
 const credentialsDelete = credentials.delete;
@@ -514,3 +577,4 @@ export const list = credentials.list;
 export { credentialsDelete as delete };
 export const upsert = credentials.upsert;
 export const remove = credentials.remove;
+export const removeByOriginNamespace = credentials.removeByOriginNamespace;

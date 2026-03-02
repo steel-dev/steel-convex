@@ -15,8 +15,8 @@ type SteelTopLevelClient = {
   pdf?: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
-const MIN_TIMEOUT_MS = 1;
-const MAX_TIMEOUT_MS = 120000;
+const MIN_DELAY_MS = 0;
+const MAX_DELAY_MS = 120000;
 
 const requireOwnerId = (ownerId: string | undefined, operation: string): string => {
   const normalized = normalizeOwnerId(ownerId);
@@ -60,24 +60,29 @@ const normalizeUrl = (value: unknown, operation: string): string => {
   }
 };
 
-const normalizeTimeout = (value: number | undefined, operation: string): number | undefined => {
+const normalizeDelay = (
+  delay: number | undefined,
+  timeout: number | undefined,
+  operation: string,
+): number | undefined => {
+  const value = delay ?? timeout;
   if (value === undefined) {
     return undefined;
   }
 
   if (!Number.isFinite(value)) {
-    throw normalizeError(`timeout must be a finite number for ${operation}`, operation);
+    throw normalizeError(`delay must be a finite number for ${operation}`, operation);
   }
 
-  const normalizedTimeout = Math.floor(value);
-  if (normalizedTimeout < MIN_TIMEOUT_MS || normalizedTimeout > MAX_TIMEOUT_MS) {
+  const normalized = Math.floor(value);
+  if (normalized < MIN_DELAY_MS || normalized > MAX_DELAY_MS) {
     throw normalizeError(
-      `timeout must be between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS} for ${operation}`,
+      `delay must be between ${MIN_DELAY_MS} and ${MAX_DELAY_MS} for ${operation}`,
       operation,
     );
   }
 
-  return normalizedTimeout;
+  return normalized;
 };
 
 const normalizeUtilityArgs = (
@@ -97,13 +102,13 @@ const normalizeUtilityArgs = (
 
 const buildPayload = (
   url: string,
-  timeout: number | undefined,
+  delay: number | undefined,
   commandArgs: Record<string, unknown> | undefined,
 ): JsonObject => {
   return {
     ...(commandArgs ?? {}),
     url,
-    ...(timeout !== undefined ? { timeout } : {}),
+    ...(delay !== undefined ? { delay } : {}),
   };
 };
 
@@ -128,23 +133,24 @@ export const steel = {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
       url: v.string(),
+      delay: v.optional(v.number()),
       timeout: v.optional(v.number()),
       commandArgs: v.optional(v.record(v.string(), v.any())),
     },
-    handler: async (ctx, args) => {
+    handler: async (_ctx, args) => {
       requireOwnerId(args.ownerId, "steel.screenshot");
 
       const normalizedUrl = normalizeUrl(args.url, "steel.screenshot");
-      const timeout = normalizeTimeout(args.timeout, "steel.screenshot");
+      const delay = normalizeDelay(args.delay, args.timeout, "steel.screenshot");
       const commandArgs = normalizeUtilityArgs(args.commandArgs, "steel.screenshot");
-      const payload = buildPayload(normalizedUrl, timeout, commandArgs);
+      const payload = buildPayload(normalizedUrl, delay, commandArgs);
 
       const client = createSteelClient(
         { apiKey: args.apiKey },
         { operation: "steel.screenshot" },
       );
 
-      return await callSteelTopLevel("steel.screenshot", "screenshot", client, payload);
+      return callSteelTopLevel("steel.screenshot", "screenshot", client, payload);
     },
   }),
   scrape: action({
@@ -152,23 +158,24 @@ export const steel = {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
       url: v.string(),
+      delay: v.optional(v.number()),
       timeout: v.optional(v.number()),
       commandArgs: v.optional(v.record(v.string(), v.any())),
     },
-    handler: async (ctx, args) => {
+    handler: async (_ctx, args) => {
       requireOwnerId(args.ownerId, "steel.scrape");
 
       const normalizedUrl = normalizeUrl(args.url, "steel.scrape");
-      const timeout = normalizeTimeout(args.timeout, "steel.scrape");
+      const delay = normalizeDelay(args.delay, args.timeout, "steel.scrape");
       const commandArgs = normalizeUtilityArgs(args.commandArgs, "steel.scrape");
-      const payload = buildPayload(normalizedUrl, timeout, commandArgs);
+      const payload = buildPayload(normalizedUrl, delay, commandArgs);
 
       const client = createSteelClient(
         { apiKey: args.apiKey },
         { operation: "steel.scrape" },
       );
 
-      return await callSteelTopLevel("steel.scrape", "scrape", client, payload);
+      return callSteelTopLevel("steel.scrape", "scrape", client, payload);
     },
   }),
   pdf: action({
@@ -176,23 +183,24 @@ export const steel = {
       apiKey: v.string(),
       ownerId: v.optional(v.string()),
       url: v.string(),
+      delay: v.optional(v.number()),
       timeout: v.optional(v.number()),
       commandArgs: v.optional(v.record(v.string(), v.any())),
     },
-    handler: async (ctx, args) => {
+    handler: async (_ctx, args) => {
       requireOwnerId(args.ownerId, "steel.pdf");
 
       const normalizedUrl = normalizeUrl(args.url, "steel.pdf");
-      const timeout = normalizeTimeout(args.timeout, "steel.pdf");
+      const delay = normalizeDelay(args.delay, args.timeout, "steel.pdf");
       const commandArgs = normalizeUtilityArgs(args.commandArgs, "steel.pdf");
-      const payload = buildPayload(normalizedUrl, timeout, commandArgs);
+      const payload = buildPayload(normalizedUrl, delay, commandArgs);
 
       const client = createSteelClient(
         { apiKey: args.apiKey },
         { operation: "steel.pdf" },
       );
 
-      return await callSteelTopLevel("steel.pdf", "pdf", client, payload);
+      return callSteelTopLevel("steel.pdf", "pdf", client, payload);
     },
   }),
 };

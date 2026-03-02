@@ -80,10 +80,16 @@ interface RawSessionRecord {
 type SteelSessionsClient = {
   sessions?: {
     create?: (args: Record<string, unknown>) => Promise<unknown>;
-    get?: (id: string) => Promise<unknown>;
     retrieve?: (id: string) => Promise<unknown>;
     list?: (query?: Record<string, unknown>) => Promise<unknown>;
-    release?: (id: string) => Promise<unknown>;
+    release?: (id: string, body?: Record<string, unknown> | null) => Promise<unknown>;
+    releaseAll?: (body?: Record<string, unknown> | null) => Promise<unknown>;
+    computer?: (id: string, body: Record<string, unknown>) => Promise<unknown>;
+    context?: (id: string) => Promise<unknown>;
+    events?: (id: string) => Promise<unknown>;
+    liveDetails?: (id: string) => Promise<unknown>;
+    // Compatibility for older mocks.
+    get?: (id: string) => Promise<unknown>;
   };
 };
 
@@ -105,6 +111,42 @@ const pickFirstNumber = (value: JsonObject, keys: string[]): number | undefined 
   for (const key of keys) {
     const candidate = value[key];
     if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
+const toTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.length) {
+      return undefined;
+    }
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const pickFirstTimestamp = (value: JsonObject, keys: string[]): number | undefined => {
+  for (const key of keys) {
+    const candidate = toTimestamp(value[key]);
+    if (candidate !== undefined) {
       return candidate;
     }
   }
@@ -175,12 +217,12 @@ const normalizeCreatePayload = (
     externalId,
     status,
     createdAt:
-      pickFirstNumber(payload, ["createdAt", "created_at"]) ??
-      pickFirstNumber(payload, ["created"]) ??
+      pickFirstTimestamp(payload, ["createdAt", "created_at"]) ??
+      pickFirstTimestamp(payload, ["created"]) ??
       syncedAt,
     updatedAt:
-      pickFirstNumber(payload, ["updatedAt", "updated_at"]) ??
-      pickFirstNumber(payload, ["updated"]) ??
+      pickFirstTimestamp(payload, ["updatedAt", "updated_at"]) ??
+      pickFirstTimestamp(payload, ["updated"]) ??
       syncedAt,
     lastSyncedAt: syncedAt,
     debugUrl: pickFirstString(payload, ["debugUrl", "debug_url"]),
@@ -305,7 +347,7 @@ const listInternalByOwner = internalQuery({
     });
 
     return {
-      items: page.page,
+      items: page.page as RawSessionRecord[],
       hasMore: !page.isDone,
       continuation: page.isDone ? undefined : page.continueCursor,
     };
@@ -342,13 +384,13 @@ const remoteRelease = async (
 
 const remoteGetSession = async (steel: ReturnType<typeof createSteelClient>, externalId: string) => {
   const sessionClient = steel as SteelSessionsClient;
-  const getMethod = sessionClient.sessions?.get;
   const retrieveMethod = sessionClient.sessions?.retrieve;
-  if (!getMethod && !retrieveMethod) {
-    throw normalizeError("Steel sessions.get is not available", "sessions.get");
+  const getMethod = sessionClient.sessions?.get;
+  if (!retrieveMethod && !getMethod) {
+    throw normalizeError("Steel sessions.retrieve is not available", "sessions.get");
   }
 
-  const method = getMethod ?? retrieveMethod!;
+  const method = retrieveMethod ?? getMethod!;
   return runWithNormalizedError("sessions.get", () =>
     method.call(sessionClient.sessions, externalId),
   );
@@ -384,10 +426,86 @@ const remoteListSessions = async (
   );
 };
 
+const remoteComputerSession = async (
+  steel: ReturnType<typeof createSteelClient>,
+  externalId: string,
+  commandArgs: Record<string, unknown>,
+) => {
+  const sessionClient = steel as SteelSessionsClient;
+  const computerMethod = sessionClient.sessions?.computer;
+  if (!computerMethod) {
+    throw normalizeError("Steel sessions.computer is not available", "sessions.computer");
+  }
+
+  return runWithNormalizedError("sessions.computer", () =>
+    computerMethod.call(sessionClient.sessions, externalId, commandArgs),
+  );
+};
+
+const remoteContextSession = async (
+  steel: ReturnType<typeof createSteelClient>,
+  externalId: string,
+) => {
+  const sessionClient = steel as SteelSessionsClient;
+  const contextMethod = sessionClient.sessions?.context;
+  if (!contextMethod) {
+    throw normalizeError("Steel sessions.context is not available", "sessions.context");
+  }
+
+  return runWithNormalizedError("sessions.context", () =>
+    contextMethod.call(sessionClient.sessions, externalId),
+  );
+};
+
+const remoteEventsSession = async (
+  steel: ReturnType<typeof createSteelClient>,
+  externalId: string,
+) => {
+  const sessionClient = steel as SteelSessionsClient;
+  const eventsMethod = sessionClient.sessions?.events;
+  if (!eventsMethod) {
+    throw normalizeError("Steel sessions.events is not available", "sessions.events");
+  }
+
+  return runWithNormalizedError("sessions.events", () =>
+    eventsMethod.call(sessionClient.sessions, externalId),
+  );
+};
+
+const remoteLiveDetailsSession = async (
+  steel: ReturnType<typeof createSteelClient>,
+  externalId: string,
+) => {
+  const sessionClient = steel as SteelSessionsClient;
+  const liveDetailsMethod = sessionClient.sessions?.liveDetails;
+  if (!liveDetailsMethod) {
+    throw normalizeError("Steel sessions.liveDetails is not available", "sessions.liveDetails");
+  }
+
+  return runWithNormalizedError("sessions.liveDetails", () =>
+    liveDetailsMethod.call(sessionClient.sessions, externalId),
+  );
+};
+
 const normalizeListLimit = (limit: number | undefined): number => {
   const parsedLimit =
     typeof limit === "number" && Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_LIST_LIMIT;
   return Math.max(1, Math.min(parsedLimit, MAX_LIST_LIMIT));
+};
+
+const normalizeCommandArgs = (
+  commandArgs: Record<string, unknown> | undefined,
+  operation: string,
+): Record<string, unknown> => {
+  if (!commandArgs) {
+    throw normalizeError(`commandArgs is required for ${operation}`, operation);
+  }
+
+  if (typeof commandArgs !== "object" || Array.isArray(commandArgs)) {
+    throw normalizeError(`Invalid commandArgs for ${operation}`, operation);
+  }
+
+  return { ...commandArgs };
 };
 
 const normalizeListResponse = (
@@ -422,6 +540,7 @@ const normalizeListResponse = (
   const continuation = pickFirstString(envelope, [
     "continueCursor",
     "nextCursor",
+    "next_cursor",
     "cursor",
     "pageCursor",
   ]);
@@ -440,6 +559,23 @@ const normalizeListResponse = (
     hasMore,
     continuation,
   };
+};
+
+const assertSessionOwnerIfPresent = async (
+  ctx: unknown,
+  ownerId: string,
+  externalId: string,
+  operation: string,
+): Promise<void> => {
+  await runWithNormalizedError(operation, async () => {
+    await (ctx as { runQuery: (queryRef: unknown, args: unknown) => Promise<unknown> }).runQuery(
+      internal.sessions.getInternalByExternalId,
+      {
+      externalId,
+      ownerId,
+      },
+    );
+  });
 };
 
 const upsertSession = internalMutation({
@@ -566,7 +702,7 @@ export const sessions = {
       ownerId: v.string(),
     },
     handler: async (ctx, args) => {
-      const session = await ctx.db.get(args.id as any);
+      const session = (await ctx.db.get(args.id as any)) as RawSessionRecord | null;
       if (!session) {
         return null;
       }
@@ -691,6 +827,76 @@ export const sessions = {
       };
     },
   }),
+  computer: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.string(),
+      externalId: v.string(),
+      commandArgs: v.record(v.string(), v.any()),
+    },
+    handler: async (ctx, args) => {
+      const ownerId = requireOwnerId(args.ownerId, "sessions.computer");
+      await assertSessionOwnerIfPresent(ctx, ownerId, args.externalId, "sessions.computer");
+
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "sessions.computer" },
+      );
+      const commandArgs = normalizeCommandArgs(args.commandArgs, "sessions.computer");
+      return remoteComputerSession(steel, args.externalId, commandArgs);
+    },
+  }),
+  context: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.string(),
+      externalId: v.string(),
+    },
+    handler: async (ctx, args) => {
+      const ownerId = requireOwnerId(args.ownerId, "sessions.context");
+      await assertSessionOwnerIfPresent(ctx, ownerId, args.externalId, "sessions.context");
+
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "sessions.context" },
+      );
+      return remoteContextSession(steel, args.externalId);
+    },
+  }),
+  events: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.string(),
+      externalId: v.string(),
+    },
+    handler: async (ctx, args) => {
+      const ownerId = requireOwnerId(args.ownerId, "sessions.events");
+      await assertSessionOwnerIfPresent(ctx, ownerId, args.externalId, "sessions.events");
+
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "sessions.events" },
+      );
+      return remoteEventsSession(steel, args.externalId);
+    },
+  }),
+  liveDetails: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.string(),
+      externalId: v.string(),
+    },
+    handler: async (ctx, args) => {
+      const ownerId = requireOwnerId(args.ownerId, "sessions.liveDetails");
+      await assertSessionOwnerIfPresent(ctx, ownerId, args.externalId, "sessions.liveDetails");
+
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "sessions.liveDetails" },
+      );
+      return remoteLiveDetailsSession(steel, args.externalId);
+    },
+  }),
   list: query({
     args: {
       status: v.optional(v.union(v.literal("live"), v.literal("released"), v.literal("failed"))),
@@ -716,7 +922,7 @@ export const sessions = {
       });
 
       return {
-        items: page.page.map((session) =>
+        items: (page.page as RawSessionRecord[]).map((session) =>
           normalizeWithError("sessions.list", () => normalizeSessionRecord(session)),
         ),
         hasMore: !page.isDone,
@@ -734,12 +940,12 @@ export const sessions = {
       const ownerId = requireOwnerId(args.ownerId, "sessions.release");
 
       const now = getSessionSyncTime();
-      const existing = await runWithNormalizedError("sessions.getInternalByExternalId", () =>
+      const existing = (await runWithNormalizedError("sessions.getInternalByExternalId", () =>
         ctx.runQuery(internal.sessions.getInternalByExternalId, {
           externalId: args.externalId,
           ownerId,
         }),
-      );
+      )) as RawSessionRecord | null;
 
       if (existing?.status === "released") {
         const released = buildReleasedSessionPayload(existing, now);
@@ -820,14 +1026,18 @@ export const sessions = {
       );
       const limit = normalizeListLimit(args.limit);
 
-      const page = await runWithNormalizedError("sessions.listInternalByOwner", () =>
+      const page = (await runWithNormalizedError("sessions.listInternalByOwner", () =>
         ctx.runQuery(internal.sessions.listInternalByOwner, {
           ownerId,
           status: args.status,
           cursor: args.cursor,
           limit,
         }),
-      );
+      )) as {
+        items: RawSessionRecord[];
+        hasMore: boolean;
+        continuation?: string;
+      };
       const results: UpsertSessionArgs[] = [];
       const failures: ReleaseAllFailure[] = [];
 
@@ -911,6 +1121,10 @@ export const refresh = sessions.refresh;
 export const get = sessions.get;
 export const getByExternalId = sessions.getByExternalId;
 export const refreshMany = sessions.refreshMany;
+export const computer = sessions.computer;
+export const context = sessions.context;
+export const events = sessions.events;
+export const liveDetails = sessions.liveDetails;
 export const list = sessions.list;
 export const release = sessions.release;
 export const releaseAll = sessions.releaseAll;
