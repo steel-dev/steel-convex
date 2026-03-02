@@ -15,6 +15,11 @@ export interface SteelComponentContext {
 }
 
 interface SteelComponentFunctions {
+  steel: {
+    screenshot: unknown;
+    scrape: unknown;
+    pdf: unknown;
+  };
   sessions: {
     create: unknown;
     refresh: unknown;
@@ -39,6 +44,12 @@ interface SteelComponentFunctions {
     get: unknown;
     createFromUrl: unknown;
     updateFromUrl: unknown;
+  };
+  files: {
+    list: unknown;
+    uploadFromUrl: unknown;
+    delete: unknown;
+    downloadToStorage: unknown;
   };
   credentials: {
     create: unknown;
@@ -121,6 +132,18 @@ export interface SteelSessionFileRecord {
   lastSyncedAt: number;
 }
 
+export interface SteelFileRecord {
+  externalId: string;
+  ownerId: string;
+  name?: string;
+  path?: string;
+  size?: number;
+  lastModified?: number;
+  sourceUrl?: string;
+  mimeType?: string;
+  lastSyncedAt: number;
+}
+
 export interface SteelCaptchaState {
   sessionExternalId: string;
   pageId: string;
@@ -168,6 +191,12 @@ export interface SteelCredentialListResult {
 
 export interface SteelSessionFileListResult {
   items: SteelSessionFileRecord[];
+  hasMore: boolean;
+  continuation?: string;
+}
+
+export interface SteelFileListResult {
+  items: SteelFileRecord[];
   hasMore: boolean;
   continuation?: string;
 }
@@ -258,6 +287,32 @@ export interface SteelComponentSessionFileDeleteAllArgs {
   sessionExternalId: string;
 }
 
+export interface SteelComponentFileListArgs {
+  ownerId: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface SteelComponentFileUploadFromUrlArgs {
+  ownerId: string;
+  url: string;
+  path?: string;
+  name?: string;
+  fileArgs?: Record<string, unknown>;
+}
+
+export interface SteelComponentFileDeleteArgs {
+  ownerId: string;
+  externalId: string;
+}
+
+export interface SteelComponentFileDownloadToStorageArgs {
+  ownerId: string;
+  externalId?: string;
+  url?: string;
+  fileArgs?: Record<string, unknown>;
+}
+
 export interface SteelComponentCaptchaStatusArgs {
   sessionExternalId: string;
   pageId: string;
@@ -316,6 +371,27 @@ export interface SteelComponentCredentialListArgs {
 export interface SteelComponentCredentialDeleteArgs {
   externalId: string;
   ownerId: string;
+}
+
+export interface SteelComponentTopLevelScreenshotArgs {
+  url: string;
+  ownerId: string;
+  timeout?: number;
+  commandArgs?: Record<string, unknown>;
+}
+
+export interface SteelComponentTopLevelScrapeArgs {
+  url: string;
+  ownerId: string;
+  timeout?: number;
+  commandArgs?: Record<string, unknown>;
+}
+
+export interface SteelComponentTopLevelPdfArgs {
+  url: string;
+  ownerId: string;
+  timeout?: number;
+  commandArgs?: Record<string, unknown>;
 }
 
 export interface SteelExtensionMetadata {
@@ -460,6 +536,42 @@ export class SteelComponent {
     const argsWithOwnerId = this.injectOwnerId(args, this.options.ownerId, options?.ownerId);
     return ctx.runMutation<TArgs & SteelComponentApiArgs, TResult>(mutation, argsWithOwnerId as TArgs);
   }
+
+  public readonly steel = {
+    screenshot: (
+      ctx: SteelComponentContext,
+      args: SteelComponentTopLevelScreenshotArgs,
+      options?: SteelComponentOptions,
+    ) =>
+      this.runAction<SteelComponentTopLevelScreenshotArgs, unknown>(
+        ctx,
+        this.component.steel.screenshot,
+        args,
+        options,
+      ),
+    scrape: (
+      ctx: SteelComponentContext,
+      args: SteelComponentTopLevelScrapeArgs,
+      options?: SteelComponentOptions,
+    ) =>
+      this.runAction<SteelComponentTopLevelScrapeArgs, unknown>(
+        ctx,
+        this.component.steel.scrape,
+        args,
+        options,
+      ),
+    pdf: (
+      ctx: SteelComponentContext,
+      args: SteelComponentTopLevelPdfArgs,
+      options?: SteelComponentOptions,
+    ) =>
+      this.runAction<SteelComponentTopLevelPdfArgs, unknown>(
+        ctx,
+        this.component.steel.pdf,
+        args,
+        options,
+      ),
+  };
 
   public readonly sessions = {
     create: (
@@ -638,6 +750,53 @@ export class SteelComponent {
       this.runAction<SteelComponentSessionFileDeleteAllArgs, unknown>(
         ctx,
         this.component.sessionFiles.deleteAll,
+        args,
+        options,
+      ),
+  };
+
+  public readonly files = {
+    list: (
+      ctx: SteelComponentContext,
+      args: SteelComponentFileListArgs,
+      options?: SteelComponentOptions,
+    ) =>
+      this.runAction<SteelComponentFileListArgs, SteelFileListResult>(
+        ctx,
+        this.component.files.list,
+        args,
+        options,
+      ),
+    uploadFromUrl: (
+      ctx: SteelComponentContext,
+      args: SteelComponentFileUploadFromUrlArgs,
+      options?: SteelComponentOptions,
+    ) =>
+      this.runAction<SteelComponentFileUploadFromUrlArgs, SteelFileRecord>(
+        ctx,
+        this.component.files.uploadFromUrl,
+        args,
+        options,
+      ),
+    delete: (
+      ctx: SteelComponentContext,
+      args: SteelComponentFileDeleteArgs,
+      options?: SteelComponentOptions,
+    ) =>
+      this.runAction<SteelComponentFileDeleteArgs, unknown>(
+        ctx,
+        this.component.files.delete,
+        args,
+        options,
+      ),
+    downloadToStorage: (
+      ctx: SteelComponentContext,
+      args: SteelComponentFileDownloadToStorageArgs,
+      options?: SteelComponentOptions,
+    ) =>
+      this.runAction<SteelComponentFileDownloadToStorageArgs, unknown>(
+        ctx,
+        this.component.files.downloadToStorage,
         args,
         options,
       ),

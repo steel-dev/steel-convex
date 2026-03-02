@@ -565,19 +565,20 @@
         "extensions",
         "v1.1"
       ],
-      "updated_at": "2026-03-02T09:40:39Z",
+      "updated_at": "2026-03-02T09:40:43Z",
       "details": "Implemented extensions module with list/uploadFromUrl/updateFromUrl/delete/deleteAll actions plus metadata persistence via a new extensions table, with ownerId and URL validation in action arguments and wrapper surface in client.",
       "files": [
+        "src/client/index.ts",
         "src/component/extensions.ts",
         "src/component/schema.ts",
-        "src/client/index.ts"
+        "to-do.json"
       ]
     },
     {
       "id": "T023",
       "title": "Implement global files module and optional storage download flow",
       "priority": 4,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T007"
       ],
@@ -589,13 +590,21 @@
       "tags": [
         "files",
         "v1.1"
+      ],
+      "updated_at": "2026-03-02T09:41:56Z",
+      "details": "Implemented global files module actions (list/uploadFromUrl/delete), optional files.downloadToStorage action, and metadata persistence in globalFiles schema with client wrapper method bindings.",
+      "files": [
+        "src/client/index.ts",
+        "src/component/files.ts",
+        "src/component/schema.ts",
+        "to-do.json"
       ]
     },
     {
       "id": "T024",
       "title": "Add top-level steel.screenshot, steel.scrape, and steel.pdf actions",
       "priority": 4,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T007"
       ],
@@ -607,7 +616,14 @@
       "tags": [
         "utility",
         "v1.1"
-      ]
+      ],
+      "updated_at": "2026-03-02T09:42:32Z",
+      "files": [
+        "src/component/topLevel.ts",
+        "src/client/index.ts",
+        "to-do.json"
+      ],
+      "details": "Added direct top-level steel.screenshot, steel.scrape, and steel.pdf passthrough actions with explicit URL/timeout/argument validators and wrapper bindings in SteelComponent."
     },
     {
       "id": "T025",
