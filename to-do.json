@@ -232,7 +232,7 @@
         "sessions",
         "mvp"
       ],
-      "updated_at": "2026-03-02T09:26:50Z",
+      "updated_at": "2026-03-02T09:27:12Z",
       "details": "Implemented sessions.create action as a write-through action with validation, remote call, response normalization, and internal upsert by externalId. ownerId is required and includeRaw controls raw persistence.",
       "files": [
         "src/component/sessions.ts",
@@ -243,7 +243,7 @@
       "id": "T010",
       "title": "Implement sessions.get and sessions.getByExternalId queries",
       "priority": 1,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T005",
         "T009"
@@ -256,13 +256,19 @@
       "tags": [
         "sessions",
         "query"
+      ],
+      "updated_at": "2026-03-02T09:27:27Z",
+      "details": "Implemented sessions.get and sessions.getByExternalId as component queries, with optional ownerId filtering and normalized output matching create payload shape.",
+      "files": [
+        "src/component/sessions.ts",
+        "to-do.json"
       ]
     },
     {
       "id": "T011",
       "title": "Implement sessions.list query with status and pagination arguments",
       "priority": 1,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T005",
         "T010"
@@ -275,6 +281,12 @@
       "tags": [
         "sessions",
         "query"
+      ],
+      "updated_at": "2026-03-02T09:27:55Z",
+      "details": "Implemented sessions.list query with status and pagination support (status, ownerId, cursor, and limit args). Added conservative defaults, stable ordering, and continuation token.",
+      "files": [
+        "src/component/sessions.ts",
+        "to-do.json"
       ]
     },
     {

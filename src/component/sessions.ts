@@ -1,4 +1,4 @@
-import { action, internal, internalMutation } from "./_generated/server";
+import { action, internal, internalMutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 import { createSteelClient } from "./steel";
@@ -8,6 +8,9 @@ import {
   normalizeSessionStatus,
 } from "./normalize";
 import type { SessionStatus } from "./schema";
+
+const DEFAULT_LIST_LIMIT = 50;
+const MAX_LIST_LIMIT = 100;
 
 type JsonObject = Record<string, unknown>;
 
@@ -32,6 +35,31 @@ interface UpsertSessionArgs {
   userAgent?: string;
   raw?: unknown;
   ownerId: string;
+}
+
+interface RawSessionRecord {
+  _id: string;
+  _creationTime?: number;
+  externalId: string;
+  status: SessionStatus;
+  createdAt: number;
+  updatedAt: number;
+  lastSyncedAt: number;
+  debugUrl?: string;
+  sessionViewerUrl?: string;
+  websocketUrl?: string;
+  timeout?: number;
+  duration?: number;
+  creditsUsed?: number;
+  eventCount?: number;
+  proxyBytesUsed?: number;
+  profileId?: string;
+  region?: string;
+  headless?: boolean;
+  isSelenium?: boolean;
+  userAgent?: string;
+  raw?: unknown;
+  ownerId?: string;
 }
 
 const pickFirstString = (value: JsonObject, keys: string[]): string | undefined => {
@@ -122,6 +150,41 @@ const normalizeCreatePayload = (
   };
 };
 
+const normalizeSessionRecord = (session: RawSessionRecord): UpsertSessionArgs => {
+  const ownerId = normalizeOwnerId(session.ownerId);
+  if (!ownerId) {
+    throw new Error("Session record missing ownerId");
+  }
+
+  return {
+    externalId: session.externalId,
+    status: session.status,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    lastSyncedAt: session.lastSyncedAt,
+    debugUrl: session.debugUrl,
+    sessionViewerUrl: session.sessionViewerUrl,
+    websocketUrl: session.websocketUrl,
+    timeout: session.timeout,
+    duration: session.duration,
+    creditsUsed: session.creditsUsed,
+    eventCount: session.eventCount,
+    proxyBytesUsed: session.proxyBytesUsed,
+    profileId: session.profileId,
+    region: session.region,
+    headless: session.headless,
+    isSelenium: session.isSelenium,
+    userAgent: session.userAgent,
+    raw: session.raw,
+    ownerId,
+  };
+};
+
+const normalizeListLimit = (limit: number | undefined): number => {
+  const parsedLimit = Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_LIST_LIMIT;
+  return Math.max(1, Math.min(parsedLimit, MAX_LIST_LIMIT));
+};
+
 const upsertSession = internalMutation({
   args: {
     externalId: v.string(),
@@ -194,6 +257,85 @@ export const sessions = {
       await ctx.runMutation(internal.sessions.upsert, normalizedSession);
 
       return normalizedSession;
+    },
+  }),
+  get: query({
+    args: {
+      id: v.string(),
+      ownerId: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+      const session = await ctx.db.get(args.id);
+      if (!session) {
+        return null;
+      }
+
+      if (args.ownerId) {
+        const ownerId = normalizeOwnerId(args.ownerId);
+        if (!ownerId || session.ownerId !== ownerId) {
+          throw new Error("ownerId mismatch for session query");
+        }
+      }
+
+      return normalizeSessionRecord(session);
+    },
+  }),
+  getByExternalId: query({
+    args: {
+      externalId: v.string(),
+      ownerId: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+      const session = await ctx.db
+        .query("sessions")
+        .withIndex("byExternalId", (q) => q.eq("externalId", args.externalId))
+        .unique();
+
+      if (!session) {
+        return null;
+      }
+
+      if (args.ownerId) {
+        const ownerId = normalizeOwnerId(args.ownerId);
+        if (!ownerId || session.ownerId !== ownerId) {
+          throw new Error("ownerId mismatch for session query");
+        }
+      }
+
+      return normalizeSessionRecord(session);
+    },
+  }),
+  list: query({
+    args: {
+      status: v.optional(v.union(v.literal("live"), v.literal("released"), v.literal("failed"))),
+      ownerId: v.optional(v.string()),
+      cursor: v.optional(v.string()),
+      limit: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+      const limit = normalizeListLimit(args.limit);
+      const ownerId = normalizeOwnerId(args.ownerId);
+
+      let sessionQuery = ctx.db.query("sessions").order("desc");
+
+      if (args.status) {
+        sessionQuery = sessionQuery.filter((q) => q.eq(q.field("status"), args.status));
+      }
+
+      if (ownerId) {
+        sessionQuery = sessionQuery.filter((q) => q.eq(q.field("ownerId"), ownerId));
+      }
+
+      const page = await sessionQuery.paginate({
+        numItems: limit,
+        cursor: args.cursor,
+      });
+
+      return {
+        items: page.page.map((session) => normalizeSessionRecord(session)),
+        hasMore: !page.isDone,
+        continuation: page.isDone ? undefined : page.continueCursor,
+      };
     },
   }),
   upsert: upsertSession,
