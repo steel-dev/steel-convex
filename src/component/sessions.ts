@@ -259,6 +259,35 @@ export const sessions = {
       return normalizedSession;
     },
   }),
+  refresh: action({
+    args: {
+      apiKey: v.string(),
+      externalId: v.string(),
+      ownerId: v.optional(v.string()),
+      includeRaw: v.optional(v.boolean()),
+    },
+    handler: async (ctx, args) => {
+      const ownerId = normalizeOwnerId(args.ownerId);
+      if (!ownerId) {
+        throw new Error("Missing ownerId: ownerId is required for sessions.refresh");
+      }
+
+      const steel = createSteelClient({ apiKey: args.apiKey });
+      const rawSession = await steel.sessions.get(args.externalId);
+      if (!rawSession || typeof rawSession !== "object") {
+        throw new Error("Invalid response from Steel sessions.get");
+      }
+
+      const normalizedSession = normalizeCreatePayload(
+        rawSession as JsonObject,
+        ownerId,
+        normalizeIncludeRaw(args.includeRaw),
+      );
+      await ctx.runMutation(internal.sessions.upsert, normalizedSession);
+
+      return normalizedSession;
+    },
+  }),
   get: query({
     args: {
       id: v.string(),

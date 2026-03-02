@@ -282,7 +282,7 @@
         "sessions",
         "query"
       ],
-      "updated_at": "2026-03-02T09:27:55Z",
+      "updated_at": "2026-03-02T09:28:00Z",
       "details": "Implemented sessions.list query with status and pagination support (status, ownerId, cursor, and limit args). Added conservative defaults, stable ordering, and continuation token.",
       "files": [
         "src/component/sessions.ts",
@@ -293,7 +293,7 @@
       "id": "T012",
       "title": "Implement sessions.refresh action and per-session reconciliation",
       "priority": 1,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T007",
         "T011"
@@ -306,7 +306,12 @@
       "tags": [
         "sessions",
         "sync"
-      ]
+      ],
+      "updated_at": "2026-03-02T09:28:16Z",
+      "files": [
+        "src/component/sessions.ts"
+      ],
+      "details": "Implemented sessions.refresh action with ownerId enforcement, remote per-session state fetch, normalization, and local upsert reconciliation."
     },
     {
       "id": "T013",
