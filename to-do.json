@@ -137,7 +137,7 @@
         "schema",
         "core"
       ],
-      "updated_at": "2026-03-02T09:24:32Z",
+      "updated_at": "2026-03-02T09:24:36Z",
       "details": "Defined Convex schema for sessions table with status union, required timestamps/metadata fields, optional ownerId support, and byExternalId/byStatus/byCreatedAt (+byOwnerId) indexes.",
       "files": [
         "src/component/schema.ts",
@@ -148,7 +148,7 @@
       "id": "T006",
       "title": "Create shared validators and core status/type unions",
       "priority": 1,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T005"
       ],
@@ -160,6 +160,12 @@
       "tags": [
         "validation",
         "types"
+      ],
+      "updated_at": "2026-03-02T09:25:04Z",
+      "details": "Added shared status/type validation primitives and reusable argument normalizers for ownerId/includeRaw/session status in schema and normalize modules.",
+      "files": [
+        "src/component/schema.ts",
+        "src/component/normalize.ts"
       ]
     },
     {

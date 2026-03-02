@@ -1,34 +1,46 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+export const sessionStatusValues = ["live", "released", "failed"] as const;
+export type SessionStatus = (typeof sessionStatusValues)[number];
+
 export const sessionStatus = v.union(
   v.literal("live"),
   v.literal("released"),
   v.literal("failed"),
 );
 
+export const vString = v.string();
+export const vOptionalString = v.optional(v.string());
+export const vNumber = v.number();
+export const vOptionalNumber = v.optional(v.number());
+export const vBoolean = v.boolean();
+export const vOptionalBoolean = v.optional(v.boolean());
+export const vOwnerId = vOptionalString;
+export const vIncludeRaw = vOptionalBoolean;
+
 export const schema = defineSchema({
   sessions: defineTable({
-    externalId: v.string(),
+    externalId: vString,
     status: sessionStatus,
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    lastSyncedAt: v.number(),
-    debugUrl: v.optional(v.string()),
-    sessionViewerUrl: v.optional(v.string()),
-    websocketUrl: v.optional(v.string()),
-    timeout: v.optional(v.number()),
-    duration: v.optional(v.number()),
-    creditsUsed: v.optional(v.number()),
-    eventCount: v.optional(v.number()),
-    proxyBytesUsed: v.optional(v.number()),
-    profileId: v.optional(v.string()),
-    region: v.optional(v.string()),
-    headless: v.optional(v.boolean()),
-    isSelenium: v.optional(v.boolean()),
-    userAgent: v.optional(v.string()),
+    createdAt: vNumber,
+    updatedAt: vNumber,
+    lastSyncedAt: vNumber,
+    debugUrl: vOptionalString,
+    sessionViewerUrl: vOptionalString,
+    websocketUrl: vOptionalString,
+    timeout: vOptionalNumber,
+    duration: vOptionalNumber,
+    creditsUsed: vOptionalNumber,
+    eventCount: vOptionalNumber,
+    proxyBytesUsed: vOptionalNumber,
+    profileId: vOptionalString,
+    region: vOptionalString,
+    headless: vOptionalBoolean,
+    isSelenium: vOptionalBoolean,
+    userAgent: vOptionalString,
     raw: v.optional(v.any()),
-    ownerId: v.optional(v.string()),
+    ownerId: vOwnerId,
   })
     .index("byExternalId", ["externalId"])
     .index("byStatus", ["status"])
