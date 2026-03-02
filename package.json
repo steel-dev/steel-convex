@@ -1,0 +1,45 @@
+{
+  "name": "steel-convex-component",
+  "version": "0.1.0",
+  "description": "Convex component wrapper for Steel",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "scripts": {
+    "build": "convex codegen --component-dir ./src/component && tsc -p tsconfig.json",
+    "codegen": "convex codegen --component-dir ./src/component",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./convex.config.js": {
+      "types": "./dist/component/convex.config.d.ts",
+      "default": "./dist/component/convex.config.js"
+    },
+    "./convex.config": {
+      "types": "./dist/component/convex.config.d.ts",
+      "default": "./dist/component/convex.config.js"
+    },
+    "./_generated/component.js": {
+      "default": "./_generated/component.js"
+    },
+    "./_generated/component": {
+      "default": "./_generated/component.js"
+    },
+    "./test": {
+      "types": "./dist/test.d.ts",
+      "default": "./dist/test.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "peerDependencies": {
+    "convex": "^1.32.0"
+  },
+  "dependencies": {
+    "steel-sdk": "^0.17.0"
+  }
+}

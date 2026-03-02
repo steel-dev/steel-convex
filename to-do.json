@@ -87,20 +87,21 @@
         "build",
         "config"
       ],
-      "updated_at": "2026-03-02T09:23:44Z",
+      "updated_at": "2026-03-02T09:23:59Z",
       "details": "Added initial TypeScript build configuration plus Convex component/app config wiring so generated component artifacts can be resolved from the example app.",
       "files": [
-        "tsconfig.json",
-        "src/component/convex.config.ts",
         "example/convex/convex.config.ts",
-        "example/convex/tsconfig.json"
+        "example/convex/tsconfig.json",
+        "src/component/convex.config.ts",
+        "to-do.json",
+        "tsconfig.json"
       ]
     },
     {
       "id": "T004",
       "title": "Create package manifest with required dependencies and exports",
       "priority": 1,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T002"
       ],
@@ -111,6 +112,12 @@
       ],
       "tags": [
         "packaging"
+      ],
+      "updated_at": "2026-03-02T09:24:13Z",
+      "details": "Created package manifest with required dependencies, scripts, module type, and required exports for component consumers.",
+      "files": [
+        "package.json",
+        "to-do.json"
       ]
     },
     {
