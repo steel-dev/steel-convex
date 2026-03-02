@@ -82,8 +82,12 @@ type SteelSessionsClient = {
     get?: (id: string) => Promise<unknown>;
     list?: (query?: Record<string, unknown>) => Promise<unknown>;
     release?: (id: string) => Promise<unknown>;
+    computer?: (args: Record<string, unknown>) => Promise<unknown>;
+    context?: (args: Record<string, unknown>) => Promise<unknown>;
   };
 };
+
+type RemoteCommandMethod = "computer" | "context";
 
 const pickFirstString = (value: JsonObject, keys: string[]): string | undefined => {
   for (const key of keys) {
@@ -313,6 +317,32 @@ const remoteGetSession = async (steel: ReturnType<typeof createSteelClient>, ext
   }
 
   return runWithNormalizedError("sessions.get", () => sessionClient.sessions!.get!(externalId));
+};
+
+const normalizeCommandArgs = (
+  operation: string,
+  args: Record<string, unknown> | undefined,
+): Record<string, unknown> => {
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    throw normalizeError(`Invalid session command arguments for ${operation}`, operation);
+  }
+
+  return args;
+};
+
+const runRemoteSessionCommand = async (
+  operation: "sessions.computer" | "sessions.context",
+  method: RemoteCommandMethod,
+  steel: ReturnType<typeof createSteelClient>,
+  payload: Record<string, unknown>,
+) => {
+  const sessionClient = steel as SteelSessionsClient;
+  const command = sessionClient.sessions?.[method];
+  if (!command) {
+    throw normalizeError(`Steel sessions.${method} is not available`, operation);
+  }
+
+  return runWithNormalizedError(operation, () => command(payload));
 };
 
 const normalizeListLimit = (limit: number | undefined): number => {
@@ -845,6 +875,52 @@ export const sessions = {
         hasMore: !page.isDone,
         continuation: page.isDone ? undefined : page.continueCursor,
       };
+    },
+  }),
+  computer: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.optional(v.string()),
+      commandArgs: v.record(v.string(), v.any()),
+    },
+    handler: async (ctx, args) => {
+      requireOwnerId(args.ownerId, "sessions.computer");
+
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "sessions.computer" },
+      );
+      const commandArgs = normalizeCommandArgs("sessions.computer", args.commandArgs);
+
+      return await runRemoteSessionCommand(
+        "sessions.computer",
+        "computer",
+        steel,
+        commandArgs,
+      );
+    },
+  }),
+  context: action({
+    args: {
+      apiKey: v.string(),
+      ownerId: v.optional(v.string()),
+      commandArgs: v.record(v.string(), v.any()),
+    },
+    handler: async (ctx, args) => {
+      requireOwnerId(args.ownerId, "sessions.context");
+
+      const steel = createSteelClient(
+        { apiKey: args.apiKey },
+        { operation: "sessions.context" },
+      );
+      const commandArgs = normalizeCommandArgs("sessions.context", args.commandArgs);
+
+      return await runRemoteSessionCommand(
+        "sessions.context",
+        "context",
+        steel,
+        commandArgs,
+      );
     },
   }),
   getInternalByExternalId: getInternalByExternalId,

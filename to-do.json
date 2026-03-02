@@ -398,7 +398,7 @@
       "id": "T016",
       "title": "Implement sessions.computer and sessions.context actions",
       "priority": 2,
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "T007",
         "T015"
@@ -411,6 +411,11 @@
       "tags": [
         "sessions",
         "v1"
+      ],
+      "updated_at": "2026-03-02T09:31:43Z",
+      "details": "Implemented sessions.computer and sessions.context as pass-through Steel actions in src/component/sessions.ts with ownerId enforcement, command-argument validation, and direct remote payload return without persistence.",
+      "files": [
+        "src/component/sessions.ts"
       ]
     },
     {
