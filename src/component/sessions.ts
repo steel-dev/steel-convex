@@ -341,15 +341,11 @@ const listInternalByOwner = internalQuery({
       sessionQuery = sessionQuery.filter((q) => q.eq(q.field("status"), args.status));
     }
 
-    const page = await sessionQuery.paginate({
-      numItems: args.limit,
-      cursor: args.cursor ?? null,
-    });
-
+    const items = await sessionQuery.take(args.limit);
     return {
-      items: page.page as RawSessionRecord[],
-      hasMore: !page.isDone,
-      continuation: page.isDone ? undefined : page.continueCursor,
+      items: items as RawSessionRecord[],
+      hasMore: items.length === args.limit,
+      continuation: undefined,
     };
   },
 });
@@ -916,17 +912,13 @@ export const sessions = {
         sessionQuery = sessionQuery.filter((q) => q.eq(q.field("status"), args.status));
       }
 
-      const page = await sessionQuery.paginate({
-        numItems: limit,
-        cursor: args.cursor ?? null,
-      });
-
+      const items = await sessionQuery.take(limit);
       return {
-        items: (page.page as RawSessionRecord[]).map((session) =>
-          normalizeWithError("sessions.list", () => normalizeSessionRecord(session)),
+        items: items.map((session) =>
+          normalizeWithError("sessions.list", () => normalizeSessionRecord(session as RawSessionRecord)),
         ),
-        hasMore: !page.isDone,
-        continuation: page.isDone ? undefined : page.continueCursor,
+        hasMore: items.length === limit,
+        continuation: undefined,
       };
     },
   }),

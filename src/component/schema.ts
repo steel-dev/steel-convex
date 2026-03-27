@@ -20,7 +20,7 @@ export const vOptionalAny = v.optional(v.any());
 export const vOwnerId = vString;
 export const vIncludeRaw = vOptionalBoolean;
 
-export const schema = defineSchema({
+export default defineSchema({
   sessions: defineTable({
     externalId: vString,
     status: sessionStatus,
