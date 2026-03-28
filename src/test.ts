@@ -1,5 +1,5 @@
 import { __setTestSteelClientFactory } from "./component/steel";
-import { schema as componentSchema } from "./component/schema";
+import componentSchema from "./component/schema";
 import * as convexConfig from "./component/convex.config";
 import * as sessions from "./component/sessions";
 import * as sessionFiles from "./component/sessionFiles";
