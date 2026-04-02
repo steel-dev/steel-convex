@@ -1,18 +1,5 @@
 /// <reference types="vite/client" />
 import { __setTestSteelClientFactory } from "./component/steel";
-import componentSchema from "./component/schema";
-import * as convexConfig from "./component/convex.config";
-import * as sessions from "./component/sessions";
-import * as sessionFiles from "./component/sessionFiles";
-import * as captchas from "./component/captchas";
-import * as profiles from "./component/profiles";
-import * as credentials from "./component/credentials";
-import * as extensions from "./component/extensions";
-import * as files from "./component/files";
-import * as topLevel from "./component/topLevel";
-import * as generatedApi from "./component/_generated/api";
-import * as generatedServer from "./component/_generated/server";
-import * as generatedDataModel from "./component/_generated/dataModel";
 
 type SessionStatus = "live" | "released" | "failed";
 
