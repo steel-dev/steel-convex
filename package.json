@@ -52,6 +52,7 @@
     "steel-sdk": "^0.17.0"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "convex-test": "^0.0.41",
     "typescript": "^5.9.3",
     "vitest": "^3.0.0"

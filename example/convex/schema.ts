@@ -7,7 +7,7 @@ const ownerStatus = v.union(
   v.literal("failed"),
 );
 
-export const schema = defineSchema({
+export default defineSchema({
   sessionNotes: defineTable({
     ownerId: v.string(),
     externalId: v.string(),
@@ -19,5 +19,3 @@ export const schema = defineSchema({
     .index("byOwner", ["ownerId"])
     .index("byOwnerAndStatus", ["ownerId", "status"]),
 });
-
-export const exampleSchema = schema;

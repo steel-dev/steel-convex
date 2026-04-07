@@ -1,14 +1,4 @@
 import { __setTestSteelClientFactory } from "./component/steel";
-import { schema as componentSchema } from "./component/schema";
-import * as convexConfig from "./component/convex.config";
-import * as sessions from "./component/sessions";
-import * as sessionFiles from "./component/sessionFiles";
-import * as captchas from "./component/captchas";
-import * as profiles from "./component/profiles";
-import * as credentials from "./component/credentials";
-import * as extensions from "./component/extensions";
-import * as files from "./component/files";
-import * as topLevel from "./component/topLevel";
 
 type SessionStatus = "live" | "released" | "failed";
 
@@ -637,16 +627,19 @@ export const resetMockSteelClient = (): void => {
 };
 
 export const componentModules = {
-  "./convex.config.ts": convexConfig,
-  "./schema.ts": { schema: componentSchema },
-  "./sessions.ts": sessions,
-  "./sessionFiles.ts": sessionFiles,
-  "./captchas.ts": captchas,
-  "./profiles.ts": profiles,
-  "./credentials.ts": credentials,
-  "./extensions.ts": extensions,
-  "./files.ts": files,
-  "./topLevel.ts": topLevel,
+  "./convex.config.ts": () => import("./component/convex.config.js"),
+  "./schema.ts": () => import("./component/schema.js"),
+  "./sessions.ts": () => import("./component/sessions.js"),
+  "./sessionFiles.ts": () => import("./component/sessionFiles.js"),
+  "./captchas.ts": () => import("./component/captchas.js"),
+  "./profiles.ts": () => import("./component/profiles.js"),
+  "./credentials.ts": () => import("./component/credentials.js"),
+  "./extensions.ts": () => import("./component/extensions.js"),
+  "./files.ts": () => import("./component/files.js"),
+  "./topLevel.ts": () => import("./component/topLevel.js"),
+  "./_generated/api.ts": () => import("./component/_generated/api.js"),
+  "./_generated/server.ts": () => import("./component/_generated/server.js"),
+  "./_generated/dataModel.ts": () => import("./component/_generated/dataModel.js"),
 };
 
 export const register = (
