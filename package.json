@@ -1,10 +1,26 @@
 {
-  "name": "steel-convex-component",
+  "name": "steel-convex",
   "version": "0.2.1",
   "description": "Convex component wrapper for Steel",
   "type": "module",
   "private": false,
   "license": "MIT",
+  "author": "Steel <team@steel.dev>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/steel-dev/steel-convex"
+  },
+  "homepage": "https://github.com/steel-dev/steel-convex",
+  "bugs": {
+    "url": "https://github.com/steel-dev/steel-convex/issues"
+  },
+  "keywords": [
+    "convex",
+    "steel",
+    "browser",
+    "automation",
+    "component"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "codegen": "convex codegen --component-dir ./src/component",
@@ -43,6 +59,12 @@
       "default": "./dist/test.js"
     }
   },
+  "files": [
+    "dist/",
+    "_generated/component.js",
+    "README.md",
+    "LICENSE"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "peerDependencies": {

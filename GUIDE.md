@@ -1,4 +1,4 @@
-# Getting Started with steel-convex-component
+# Getting Started with steel-convex
 
 A step-by-step guide to integrating Steel browser sessions into your Convex app.
 
@@ -28,13 +28,13 @@ By the end of this guide you'll have a Convex app that can:
 Install the component and its peer dependency:
 
 ```bash
-npm install steel-convex-component convex
+npm install steel-convex convex
 ```
 
 Or install directly from GitHub if you want the latest unreleased version:
 
 ```bash
-npm install github:steel-experiments/steel-convex-component#master
+npm install github:steel-dev/steel-convex#master
 ```
 
 ---
@@ -45,7 +45,7 @@ In your `convex/convex.config.ts`, register the Steel component:
 
 ```ts
 import { defineApp } from "convex/server";
-import steel from "steel-convex-component/convex.config";
+import steel from "steel-convex/convex.config";
 
 const app = defineApp();
 app.use(steel);
@@ -75,7 +75,7 @@ In any Convex action file, instantiate `SteelComponent`:
 
 ```ts
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex-component";
+import { SteelComponent } from "steel-convex";
 
 const steel = new SteelComponent(components.steel, {
   STEEL_API_KEY: process.env.STEEL_API_KEY,
@@ -104,7 +104,7 @@ Create `convex/steelActions.ts`:
 import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex-component";
+import { SteelComponent } from "steel-convex";
 
 const steel = new SteelComponent(components.steel, {
   STEEL_API_KEY: process.env.STEEL_API_KEY,
@@ -277,8 +277,8 @@ The component ships with a test helper for use with `convex-test` and Vitest:
 
 ```ts
 import { convexTest } from "convex-test";
-import { componentModules, registerMockSteelClient } from "steel-convex-component/test";
-import componentSchema from "steel-convex-component/component/schema";
+import { componentModules, registerMockSteelClient } from "steel-convex/test";
+import componentSchema from "steel-convex/component/schema";
 import appSchema from "./schema";
 
 const t = convexTest(appSchema, appModules);
@@ -330,7 +330,7 @@ Create `convex/priceMonitor.ts`:
 import { action, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex-component";
+import { SteelComponent } from "steel-convex";
 import { api } from "./_generated/api";
 
 const steel = new SteelComponent(components.steel, {
@@ -471,5 +471,5 @@ This is a known Convex limitation — `paginate()` cannot be used inside compone
 ## Next steps
 
 - Browse the full [API reference](./API.md)
-- Check the [demo repo](https://github.com/steel-experiments/steel-convex-demo) for a working example
+- Check the [demo repo](https://github.com/steel-experiments/steel-convex-demo) for a working example project
 - See [steel.dev](https://steel.dev) for Steel API documentation

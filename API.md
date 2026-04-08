@@ -2,7 +2,7 @@
 
 ## Wrapper
 
-Use `SteelComponent` from [src/client/index.ts](/home/agent/steel-convex-component/src/client/index.ts).
+Use `SteelComponent` from [src/client/index.ts](./src/client/index.ts).
 
 Constructor:
 
@@ -112,7 +112,7 @@ Actions:
 
 ## Component Internals
 
-Main internals in [sessions.ts](/home/agent/steel-convex-component/src/component/sessions.ts):
+Main internals in [sessions.ts](./src/component/sessions.ts):
 
 - `upsert`
 - `getInternalByExternalId`

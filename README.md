@@ -1,38 +1,54 @@
 # Steel Convex Component
 
-Add Steel browser sessions to your Convex app. Create, manage, and release cloud browser sessions — scoped per tenant — directly from your Convex actions.
+[![npm version](https://img.shields.io/npm/v/steel-convex.svg)](https://www.npmjs.com/package/steel-convex)
+
+A [Convex](https://convex.dev) component for [Steel](https://steel.dev) cloud browser sessions. Manage browser sessions, scrape pages, solve captchas, and handle files — all from your Convex actions, with built-in multi-tenant isolation.
+
+Features:
+
+- **Multi-tenant sessions** — Every operation is scoped by `ownerId`. Tenant A never sees Tenant B's sessions.
+- **Full session lifecycle** — Create, refresh, release, bulk-refresh, and bulk-release browser sessions.
+- **Scraping & screenshots** — Scrape a page, take a screenshot, or generate a PDF in a single call.
+- **Captcha solving** — Check captcha status, solve text captchas, or solve image captchas on any session.
+- **Profiles & credentials** — Persist browser profiles and saved logins across sessions.
+- **Extensions & files** — Upload browser extensions, attach files to sessions, or manage global files.
+- **Convex-native state** — Session state is persisted in your Convex database, queryable in real time from your frontend.
 
 ## Quick Start
 
-Install the component:
+### 1. Install
 
 ```bash
-npm install steel-convex-component convex
+npm install steel-convex convex
 ```
 
-Mount it in your `convex/convex.config.ts`:
+### 2. Mount the component
+
+In your `convex/convex.config.ts`:
 
 ```ts
 import { defineApp } from "convex/server";
-import steel from "steel-convex-component/convex.config";
+import steel from "steel-convex/convex.config";
 
 const app = defineApp();
 app.use(steel);
 export default app;
 ```
 
-Set your API key:
+### 3. Set your API key
 
 ```bash
 npx convex env set STEEL_API_KEY <your_steel_key>
 ```
 
-Create your first session:
+### 4. Create your first session
+
+In a Convex action file, e.g. `convex/steelActions.ts`:
 
 ```ts
 import { action } from "./_generated/server";
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex-component";
+import { SteelComponent } from "steel-convex";
 
 const steel = new SteelComponent(components.steel, {
   STEEL_API_KEY: process.env.STEEL_API_KEY,
@@ -49,26 +65,67 @@ export const createSession = action({
 });
 ```
 
-Every method takes an `ownerId` — sessions for `tenant-a` are invisible to `tenant-b`.
+### 5. Run it
 
-## What you can do
+```bash
+npx convex dev
+npx convex run steelActions:createSession
+```
 
-**Sessions** — Create, refresh, release, and query browser sessions. Bulk-refresh or release by status. Inspect live session details, events, and context.
+## Modules
 
-**Scraping & screenshots** — Scrape a page or take a screenshot/PDF without managing sessions yourself. One call does the work.
+| Module | What it does |
+|---|---|
+| `sessions` | Create, refresh, release, list, and inspect browser sessions |
+| `steel` | One-shot scrape, screenshot, or PDF — no session management needed |
+| `captchas` | Check status, solve text captchas, solve image captchas |
+| `profiles` | Create, update, list, and retrieve browser profiles |
+| `credentials` | Store and manage saved login credentials |
+| `extensions` | Upload, update, delete, and download browser extensions |
+| `files` | Upload, download, and delete global files |
+| `sessionFiles` | Attach, list, and delete files on individual sessions |
 
-**Captchas** — Check captcha status on a session, solve text captchas, or solve image captchas.
+## How it works
 
-**Profiles & credentials** — Save and reuse browser profiles and login credentials across sessions.
+Steel handles the cloud browser. Convex handles the state. This component bridges both:
 
-**Extensions** — Upload, update, and manage browser extensions that load into your sessions.
+1. Your Convex action calls the Steel API to create or manage a browser session.
+2. The component persists session state in your Convex database.
+3. Your frontend can query session data in real time — no polling, no webhooks.
 
-**Files** — Attach files to individual sessions or manage global files shared across your app.
+All operations are scoped by `ownerId`, so multi-tenant isolation is built in at the data layer.
+
+## Constructor options
+
+```ts
+const steel = new SteelComponent(components.steel, {
+  STEEL_API_KEY: process.env.STEEL_API_KEY,  // API key (or set via env var)
+  ownerId: "default-tenant",                  // Default ownerId for all calls
+});
+```
+
+- `STEEL_API_KEY` — Your Steel API key. If omitted, falls back to `process.env.STEEL_API_KEY`.
+- `ownerId` — Default owner for all method calls. Can be overridden per call via the options argument.
+
+## Troubleshooting
+
+**`Missing STEEL_API_KEY`** — The Convex runtime does not inherit your shell environment. Set it explicitly:
+
+```bash
+npx convex env set STEEL_API_KEY <your_key>
+```
+
+**`Schema file missing default export`** — Make sure `convex/schema.ts` uses `export default defineSchema({...})`, not a named export.
+
+**`No matching export ... components`** — Import `components` from `./_generated/api`, not `./_generated/server`.
+
+**`paginate() is only supported in the app`** — This is a known Convex limitation. The component uses `take()` internally instead of `paginate()`.
 
 ## Guides & Reference
 
-- [Getting Started Guide](./GUIDE.md) — step-by-step walkthrough with a real-world example
+- [Getting Started Guide](./GUIDE.md) — step-by-step walkthrough with a real-world price monitor example
 - [API Reference](./API.md) — full method signatures for every module
+- [Demo project](https://github.com/steel-experiments/steel-convex-demo) — working example app
 
 ## Development
 
@@ -78,7 +135,7 @@ npm run test
 npm run build
 ```
 
-Live integration smoke test (opt-in):
+Live integration smoke test (requires a Steel API key):
 
 ```bash
 STEEL_API_KEY=... STEEL_LIVE_TEST=1 npm test
