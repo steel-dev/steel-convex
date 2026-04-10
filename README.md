@@ -1,6 +1,7 @@
 # Steel Convex Component
 
-[![npm version](https://img.shields.io/npm/v/steel-convex.svg)](https://www.npmjs.com/package/steel-convex)
+[![npm version](https://img.shields.io/npm/v/%40steel-dev%2Fconvex.svg)](https://www.npmjs.com/package/@steel-dev/convex)
+[![Convex Component](https://www.convex.dev/components/badge/steel-dev/convex)](https://www.convex.dev/components/steel-dev/convex)
 
 A [Convex](https://convex.dev) component for [Steel](https://steel.dev) cloud browser sessions. Manage browser sessions, scrape pages, solve captchas, and handle files — all from your Convex actions, with built-in multi-tenant isolation.
 
@@ -19,7 +20,7 @@ Features:
 ### 1. Install
 
 ```bash
-npm install steel-convex convex
+npm install @steel-dev/convex convex
 ```
 
 ### 2. Mount the component
@@ -28,7 +29,7 @@ In your `convex/convex.config.ts`:
 
 ```ts
 import { defineApp } from "convex/server";
-import steel from "steel-convex/convex.config";
+import steel from "@steel-dev/convex/convex.config";
 
 const app = defineApp();
 app.use(steel);
@@ -48,7 +49,7 @@ In a Convex action file, e.g. `convex/steelActions.ts`:
 ```ts
 import { action } from "./_generated/server";
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex";
+import { SteelComponent } from "@steel-dev/convex";
 
 const steel = new SteelComponent(components.steel, {
   STEEL_API_KEY: process.env.STEEL_API_KEY,

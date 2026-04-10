@@ -1,4 +1,4 @@
-# Getting Started with steel-convex
+# Getting Started with @steel-dev/convex
 
 A step-by-step guide to integrating Steel browser sessions into your Convex app.
 
@@ -28,7 +28,7 @@ By the end of this guide you'll have a Convex app that can:
 Install the component and its peer dependency:
 
 ```bash
-npm install steel-convex convex
+npm install @steel-dev/convex convex
 ```
 
 Or install directly from GitHub if you want the latest unreleased version:
@@ -45,7 +45,7 @@ In your `convex/convex.config.ts`, register the Steel component:
 
 ```ts
 import { defineApp } from "convex/server";
-import steel from "steel-convex/convex.config";
+import steel from "@steel-dev/convex/convex.config";
 
 const app = defineApp();
 app.use(steel);
@@ -75,7 +75,7 @@ In any Convex action file, instantiate `SteelComponent`:
 
 ```ts
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex";
+import { SteelComponent } from "@steel-dev/convex";
 
 const steel = new SteelComponent(components.steel, {
   STEEL_API_KEY: process.env.STEEL_API_KEY,
@@ -104,7 +104,7 @@ Create `convex/steelActions.ts`:
 import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex";
+import { SteelComponent } from "@steel-dev/convex";
 
 const steel = new SteelComponent(components.steel, {
   STEEL_API_KEY: process.env.STEEL_API_KEY,
@@ -273,20 +273,20 @@ These tables are managed automatically — you read from them via the component'
 
 ## Testing
 
-The component ships with a test helper for use with `convex-test` and Vitest:
+The component ships with test helpers you can use to mock the Steel client in Vitest:
 
 ```ts
-import { convexTest } from "convex-test";
-import { componentModules, registerMockSteelClient } from "steel-convex/test";
-import componentSchema from "steel-convex/component/schema";
-import appSchema from "./schema";
+import { beforeEach } from "vitest";
+import { registerMockSteelClient } from "@steel-dev/convex/test";
 
-const t = convexTest(appSchema, appModules);
-t.registerComponent("steel", componentSchema, componentModules);
-
-// Mock the Steel client
-registerMockSteelClient({ sessions: [] });
+beforeEach(() => {
+  // Mock the Steel client for your tests.
+  // See this repo's test/ directory for a full convex-test harness example.
+  registerMockSteelClient({ sessions: [] });
+});
 ```
+
+If you want a full component harness with `convex-test`, use this repo's `test/` directory as a reference implementation.
 
 Run the component's own test suite:
 
@@ -330,7 +330,7 @@ Create `convex/priceMonitor.ts`:
 import { action, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
-import { SteelComponent } from "steel-convex";
+import { SteelComponent } from "@steel-dev/convex";
 import { api } from "./_generated/api";
 
 const steel = new SteelComponent(components.steel, {
