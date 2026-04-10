@@ -198,7 +198,9 @@ const deleteCredentialMetadataByOriginNamespace = internalMutation({
   handler: async (ctx, args) => {
     const records = await ctx.db
       .query("credentials")
-      .withIndex("byOwnerId", (q) => q.eq("ownerId", args.ownerId))
+      .withIndex("byOwnerIdAndOrigin", (q) =>
+        q.eq("ownerId", args.ownerId).eq("origin", args.origin),
+      )
       .collect();
 
     const targetNamespace = args.namespace ?? "default";

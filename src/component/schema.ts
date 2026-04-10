@@ -46,7 +46,8 @@ export default defineSchema({
     .index("byExternalId", ["externalId"])
     .index("byStatus", ["status"])
     .index("byCreatedAt", ["createdAt"])
-    .index("byOwnerId", ["ownerId"]),
+    .index("byOwnerId", ["ownerId"])
+    .index("byOwnerIdAndStatus", ["ownerId", "status"]),
   sessionFileMetadata: defineTable({
     sessionExternalId: vString,
     path: vString,
@@ -96,7 +97,8 @@ export default defineSchema({
     lastSyncedAt: vNumber,
   })
     .index("byExternalId", ["externalId"])
-    .index("byOwnerId", ["ownerId"]),
+    .index("byOwnerId", ["ownerId"])
+    .index("byOwnerIdAndOrigin", ["ownerId", "origin"]),
   extensions: defineTable({
     externalId: vString,
     name: vOptionalString,

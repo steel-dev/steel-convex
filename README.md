@@ -130,10 +130,13 @@ npx convex env set STEEL_API_KEY <your_key>
 ## Development
 
 ```bash
+npm run codegen:verify
 npm run typecheck
 npm run test
 npm run build
 ```
+
+`npm run codegen:verify` and `npm test` start a local anonymous Convex backend automatically, so they do not require a cloud `CONVEX_DEPLOYMENT` or deploy key in CI.
 
 Live integration smoke test (requires a Steel API key):
 

@@ -212,12 +212,15 @@ const listInternalByOwner = internalQuery({
     limit: v.number(),
   },
   handler: async (ctx, args) => {
-    let q = ctx.db
-      .query("sessions")
-      .withIndex("byOwnerId", (q) => q.eq("ownerId", args.ownerId));
-    if (args.status) {
-      q = q.filter((q) => q.eq(q.field("status"), args.status));
-    }
+    const q = args.status
+      ? ctx.db
+          .query("sessions")
+          .withIndex("byOwnerIdAndStatus", (q) =>
+            q.eq("ownerId", args.ownerId).eq("status", args.status!),
+          )
+      : ctx.db
+          .query("sessions")
+          .withIndex("byOwnerId", (q) => q.eq("ownerId", args.ownerId));
     const items = await q.take(args.limit);
     return {
       items: items as RawSessionRecord[],
@@ -542,12 +545,15 @@ export const sessions = {
       const limit = normalizeListLimit(args.limit);
       const ownerId = requireOwnerId(args.ownerId, "sessions.list");
 
-      let q = ctx.db
-        .query("sessions")
-        .withIndex("byOwnerId", (q) => q.eq("ownerId", ownerId));
-      if (args.status) {
-        q = q.filter((q) => q.eq(q.field("status"), args.status));
-      }
+      const q = args.status
+        ? ctx.db
+            .query("sessions")
+            .withIndex("byOwnerIdAndStatus", (q) =>
+              q.eq("ownerId", ownerId).eq("status", args.status!),
+            )
+        : ctx.db
+            .query("sessions")
+            .withIndex("byOwnerId", (q) => q.eq("ownerId", ownerId));
 
       const items = await q.take(limit);
       return {

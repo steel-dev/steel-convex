@@ -275,7 +275,7 @@ export const files = {
       const steel = createSteelClient(args.apiKey, {
         operation: "files.delete",
       });
-      await runWithNormalizedError("files.delete", () =>
+      const result = await runWithNormalizedError("files.delete", () =>
         steel.files.delete(path),
       );
 
@@ -285,6 +285,8 @@ export const files = {
           ownerId,
         }),
       );
+
+      return result;
     },
   }),
   download: downloadAction,

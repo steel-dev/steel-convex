@@ -4,6 +4,7 @@ import { __setTestSteelClientFactory } from "./component/steel";
 type SessionStatus = "live" | "released" | "failed";
 
 interface SteelSessionRecord {
+  id?: string;
   externalId: string;
   status: SessionStatus;
   createdAt: number;
@@ -190,7 +191,7 @@ const clampListLimit = (value: number | undefined): number =>
 const createSession = (
   request: Record<string, unknown>,
   base: SessionFixture,
-): SessionFixture => {
+): SteelSessionRecord => {
   const status =
     request.status === "live" ||
     request.status === "released" ||
@@ -204,6 +205,7 @@ const createSession = (
       : base.externalId;
 
   return {
+    id: externalId,
     ...base,
     externalId,
     status,
@@ -241,6 +243,7 @@ export const createMockSteelClient = (
   const now = () => baselineNow + sequence++ * 1000;
 
   const buildRecord = (record: SessionFixture): SteelSessionRecord => ({
+    id: record.externalId,
     externalId: record.externalId,
     status: record.status,
     createdAt: record.createdAt,
@@ -279,6 +282,7 @@ export const createMockSteelClient = (
           : `${incoming.externalId}-${sequence + 1}`;
       const record: SteelSessionRecord = {
         ...incoming,
+        id: externalId,
         externalId,
         createdAt: now(),
         updatedAt: now(),

@@ -278,7 +278,7 @@ export const sessionFiles = {
         operation: "sessionFiles.delete",
       });
 
-      await runWithNormalizedError("sessionFiles.delete", () =>
+      const result = await runWithNormalizedError("sessionFiles.delete", () =>
         steel.sessions.files.delete(args.sessionExternalId, args.path),
       );
 
@@ -289,6 +289,8 @@ export const sessionFiles = {
           ownerId,
         }),
       );
+
+      return result;
     },
   }),
   deleteAll: action({
@@ -304,7 +306,7 @@ export const sessionFiles = {
         operation: "sessionFiles.deleteAll",
       });
 
-      await runWithNormalizedError("sessionFiles.deleteAll", () =>
+      const result = await runWithNormalizedError("sessionFiles.deleteAll", () =>
         steel.sessions.files.deleteAll(args.sessionExternalId),
       );
 
@@ -314,6 +316,8 @@ export const sessionFiles = {
           ownerId,
         }),
       );
+
+      return result;
     },
   }),
   upsert: upsertSessionFileMetadata,
