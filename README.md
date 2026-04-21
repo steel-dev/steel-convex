@@ -1,7 +1,7 @@
 # Steel Convex Component
 
 [![npm version](https://img.shields.io/npm/v/%40steel-dev%2Fconvex.svg)](https://www.npmjs.com/package/@steel-dev/convex)
-[![Convex Component](https://www.convex.dev/components/badge/steel-dev/convex)](https://www.convex.dev/components/steel-dev/convex)
+[![Convex Component](https://www.convex.dev/components/badge/steel-dev/convex)](https://www.convex.dev/components/steel-dev)
 
 A [Convex](https://convex.dev) component for [Steel](https://steel.dev) cloud browser sessions. Manage browser sessions, scrape pages, solve captchas, and handle files — all from your Convex actions, with built-in multi-tenant isolation.
 
